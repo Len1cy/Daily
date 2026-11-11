@@ -1,0 +1,40 @@
+name: steamdt snapshot
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: steamdt-snapshot
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: fetch
+        env:
+          KEY: ${{ secrets.STEAMDT_KEY }}
+        run: |
+          set -u
+          mkdir -p cs
+          AUTH="Authorization: Bearer $KEY"
+          curl -fsS --max-time 25 -H "$AUTH" "https://open.steamdt.com/open/cs2/broad/v1/index" -o /tmp/i.json \
+            && grep -q '"success":true' /tmp/i.json && mv /tmp/i.json cs/index.json && echo index-ok || echo index-skip
+          curl -fsS --max-time 25 -X POST -H "$AUTH" -H "Content-Type: application/json" \
+            -d '{"type":2}' "https://open.steamdt.com/open/cs2/broad/v1/kline" -o /tmp/d.json \
+            && grep -q '"success":true' /tmp/d.json && mv /tmp/d.json cs/kline-day.json && echo day-ok || echo day-skip
+          curl -fsS --max-time 25 -X POST -H "$AUTH" -H "Content-Type: application/json" \
+            -d '{"type":3}' "https://open.steamdt.com/open/cs2/broad/v1/kline" -o /tmp/w.json \
+            && grep -q '"success":true' /tmp/w.json && mv /tmp/w.json cs/kline-week.json && echo week-ok || echo week-skip
+      - name: commit
+        run: |
+          git config user.name steamdt-bot
+          git config user.email actions@users.noreply.github.com
+          git add cs
+          if git diff --cached --quiet; then echo no-change; else git commit -m "chore: steamdt snapshot $(date -u +%FT%TZ)"; git push; fi
