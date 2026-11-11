@@ -29,9 +29,6 @@ jobs:
           curl -fsS --max-time 25 -X POST -H "$AUTH" -H "Content-Type: application/json" \
             -d '{"type":2}' "https://open.steamdt.com/open/cs2/broad/v1/kline" -o /tmp/d.json \
             && grep -q '"success":true' /tmp/d.json && mv /tmp/d.json cs/kline-day.json && echo day-ok || echo day-skip
-          curl -fsS --max-time 25 -X POST -H "$AUTH" -H "Content-Type: application/json" \
-            -d '{"type":3}' "https://open.steamdt.com/open/cs2/broad/v1/kline" -o /tmp/w.json \
-            && grep -q '"success":true' /tmp/w.json && mv /tmp/w.json cs/kline-week.json && echo week-ok || echo week-skip
       - name: commit
         run: |
           git config user.name steamdt-bot
