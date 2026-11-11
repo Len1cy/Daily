@@ -28,6 +28,7 @@ const S = {
   births: [],
   tab: 'gold',
   cross: null,          // {mode, t|i}
+  zoom: { h4: { count: 120, start: null }, day: { count: 120, start: null } },
   locked: false,
   lastFetch: 0,
   failed: false,
@@ -515,6 +516,21 @@ function chartSize() {
   return { w: box.clientWidth, h: box.clientHeight };
 }
 
+function currentList() {
+  return S.settings.period === 'h4' ? S.h4 : S.day;
+}
+
+/** 当前可见窗口：{start, count}；start 为 null 表示贴着最右边 */
+function visibleWindow(mode, list) {
+  const z = S.zoom[mode] || { count: 120, start: null };
+  const total = list.length;
+  const minCount = Math.min(6, total);
+  const count = clamp(Math.round(z.count || 120), minCount, total);
+  const maxStart = Math.max(0, total - count);
+  const start = (z.start == null) ? maxStart : clamp(Math.round(z.start), 0, maxStart);
+  return { start, count };
+}
+
 function renderChart() {
   const { w, h } = chartSize();
   if (w < 20 || h < 20) return;
@@ -523,7 +539,7 @@ function renderChart() {
   crossEl.innerHTML = '';
 
   if (S.settings.period === 'minute') drawMinute(w, h);
-  else drawCandles(w, h, S.settings.period === 'h4' ? S.h4 : S.day);
+  else drawCandles(w, h, S.settings.period === 'h4' ? S.h4 : S.day, S.settings.period);
 
   if (S.locked) drawCross();
 }
@@ -605,7 +621,7 @@ function drawMinute(w, h) {
   chartEl.innerHTML = svg;
 }
 
-function drawCandles(w, h, list) {
+function drawCandles(w, h, list, mode) {
   const padL = 10, padR = 50, padT = 12, padB = 22;
   const plotW = w - padL - padR, plotH = h - padT - padB;
 
@@ -614,34 +630,37 @@ function drawCandles(w, h, list) {
     return;
   }
 
+  const win = visibleWindow(mode, list);
+  const view = list.slice(win.start, win.start + win.count);
+
   let hi = -Infinity, lo = Infinity;
-  for (const k of list) { if (k.h > hi) hi = k.h; if (k.l < lo) lo = k.l; }
+  for (const k of view) { if (k.h > hi) hi = k.h; if (k.l < lo) lo = k.l; }
   const span = (hi - lo) || 1;
   const y = v => padT + (hi - v) / span * plotH;
-  const step = plotW / list.length;
-  const bw = clamp(step * 0.62, 1.2, 9);
+  const step = plotW / view.length;
+  const bw = clamp(step * 0.62, 1.2, 14);
 
   let svg = '';
   for (let i = 0; i <= 3; i++) {
     const gy = padT + i * plotH / 3;
-    svg += `<line x1="${padL}" x2="${w - padR}" y1="${gy}" y2="${gy}" stroke="#f2f3f6" stroke-dasharray="3 4"/>`;
-    svg += `<text x="${w - padR + 6}" y="${gy + 3.5}" font-size="9.5" fill="#a4a9b2">${Math.round(hi - i * span / 3).toLocaleString()}</text>`;
+    svg += `<line x1="${padL}" x2="${w - padR}" y1="${gy}" y2="${gy}" stroke="rgba(120,132,160,.16)" stroke-dasharray="3 4"/>`;
+    svg += `<text x="${w - padR + 6}" y="${gy + 3.5}" font-size="9.5" fill="#8e96a5">${Math.round(hi - i * span / 3).toLocaleString()}</text>`;
   }
 
-  list.forEach((k, i) => {
+  view.forEach((k, i) => {
     const cx = padL + step * i + step / 2;
     const up = k.c >= k.o;
     const col = up ? '#e02b2b' : '#0b9d5a';
     svg += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${y(k.h).toFixed(1)}" y2="${y(k.l).toFixed(1)}" stroke="${col}" stroke-width="1"/>`;
     const yTop = y(Math.max(k.o, k.c)), yBot = y(Math.min(k.o, k.c));
-    svg += `<rect x="${(cx - bw / 2).toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, yBot - yTop).toFixed(1)}" fill="${col}"/>`;
+    svg += `<rect x="${(cx - bw / 2).toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, yBot - yTop).toFixed(1)}" fill="${col}" rx="${Math.min(2, bw / 3).toFixed(1)}"/>`;
   });
 
-  const lastK = list[list.length - 1];
-  svg += `<line x1="${padL}" x2="${w - padR}" y1="${y(lastK.c)}" y2="${y(lastK.c)}" stroke="#e02b2b" stroke-width="0.9" stroke-dasharray="2 3" opacity="0.45"/>`;
+  const lastK = view[view.length - 1];
+  svg += `<line x1="${padL}" x2="${w - padR}" y1="${y(lastK.c)}" y2="${y(lastK.c)}" stroke="#e02b2b" stroke-width="0.9" stroke-dasharray="2 3" opacity="0.4"/>`;
 
-  svg += `<text x="${padL}" y="${h - 6}" font-size="9.5" fill="#a4a9b2">${list[0].label}</text>`;
-  svg += `<text x="${w - padR}" y="${h - 6}" font-size="9.5" fill="#a4a9b2" text-anchor="end">${lastK.label}</text>`;
+  svg += `<text x="${padL}" y="${h - 6}" font-size="9.5" fill="#8e96a5">${view[0].label}</text>`;
+  svg += `<text x="${w - padR}" y="${h - 6}" font-size="9.5" fill="#8e96a5" text-anchor="end">${lastK.label}</text>`;
 
   chartEl.innerHTML = svg;
 }
@@ -682,13 +701,16 @@ function drawCross() {
     if (!list || list.length < 2) return;
     const padL = 10, padR = 50, padT = 12, padB = 22;
     const plotW = w - padL - padR, plotH = h - padT - padB;
+    const win = visibleWindow(c.mode, list);
+    const view = list.slice(win.start, win.start + win.count);
+    if (!view.length) return;
+    const local = clamp(Math.round(c.i) - win.start, 0, view.length - 1);
     let hi = -Infinity, lo = Infinity;
-    for (const k of list) { if (k.h > hi) hi = k.h; if (k.l < lo) lo = k.l; }
+    for (const kk of view) { if (kk.h > hi) hi = kk.h; if (kk.l < lo) lo = kk.l; }
     const span = (hi - lo) || 1;
-    const step = plotW / list.length;
-    const i = clamp(Math.round(c.i), 0, list.length - 1);
-    const k = list[i];
-    px = padL + step * i + step / 2;
+    const step = plotW / view.length;
+    const k = view[local];
+    px = padL + step * local + step / 2;
     py = padT + (hi - k.c) / span * plotH;
     const pct = (k.c - k.o) / k.o * 100;
 
@@ -724,7 +746,7 @@ function hideCross() {
 }
 
 function updateHint() {
-  const base = S.settings.period === 'minute' ? '按住图表看任意时刻的价格' : '按住图表看这根的开高低收';
+  const base = S.settings.period === 'minute' ? '按住图表看任意时刻的价格' : '按住看单根 · 双指缩放时间 · 双击复位';
   $('#chartHint').textContent = S.locked ? '已暂停 · 轻点图表回到实时' : base;
 }
 
@@ -746,10 +768,74 @@ function pickPoint(x) {
     const list = S.settings.period === 'h4' ? S.h4 : S.day;
     if (!list || list.length < 2) return;
     const padL = 10, padR = 50;
-    const step = (w - padL - padR) / list.length;
-    S.cross = { mode: S.settings.period, i: clamp(Math.floor((x - padL) / step), 0, list.length - 1) };
+    const win = visibleWindow(S.settings.period, list);
+    const step = (w - padL - padR) / win.count;
+    const local = clamp(Math.floor((x - padL) / step), 0, win.count - 1);
+    S.cross = { mode: S.settings.period, i: win.start + local };
   }
   drawCross();
+}
+
+const pointers = new Map();
+let pinch = null;
+let lastTapAt = 0, lastTapX = 0, lastTapY = 0;
+
+function startPinch() {
+  const vals = [...pointers.values()];
+  if (vals.length < 2) return;
+  const a = vals[0], b = vals[1];
+  const mode = S.settings.period;
+  if (mode === 'minute') { pinch = null; return; }
+
+  const list = currentList();
+  if (!list || list.length < 2) { pinch = null; return; }
+  const { w } = chartSize();
+  const padL = 10, padR = 50;
+  const win = visibleWindow(mode, list);
+  const barW = (w - padL - padR) / win.count;
+  const mid = (a.x + b.x) / 2;
+
+  pinch = {
+    mode,
+    d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+    start0: win.start,
+    count0: win.count,
+    idxAtMid: win.start + (mid - padL) / barW,
+    total: list.length
+  };
+  S.locked = false;
+  dragging = false;   // 双指手势不触发「松手停住」
+  moved = true;
+  hideCross();
+}
+
+function movePinch() {
+  if (!pinch) return;
+  const vals = [...pointers.values()];
+  if (vals.length < 2) return;
+  const a = vals[0], b = vals[1];
+  const d = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+  const scale = d / pinch.d0;
+  const total = pinch.total;
+  const count = clamp(Math.round(pinch.count0 / scale), Math.min(8, total), total);
+
+  const { w } = chartSize();
+  const padL = 10, padR = 50;
+  const barW = (w - padL - padR) / count;
+  const mid = (a.x + b.x) / 2;
+  let start = Math.round(pinch.idxAtMid - (mid - padL) / barW);
+  start = clamp(start, 0, Math.max(0, total - count));
+
+  S.zoom[pinch.mode] = { count, start };
+  renderChart();
+}
+
+function resetZoom() {
+  const mode = S.settings.period;
+  if (mode === 'minute') return;
+  S.zoom[mode] = { count: 120, start: null };
+  renderChart();
+  toast('已恢复默认区间');
 }
 
 function initGestures() {
@@ -758,6 +844,11 @@ function initGestures() {
   box.addEventListener('pointerdown', e => {
     try { box.setPointerCapture(e.pointerId); } catch (err) { }
     const p = chartPoint(e);
+    pointers.set(e.pointerId, p);
+
+    if (pointers.size === 2) { startPinch(); e.preventDefault(); return; }
+    if (pointers.size > 2) return;
+
     downX = p.x; downY = p.y; moved = false;
     wasLocked = S.locked;
     dragging = true;
@@ -766,21 +857,42 @@ function initGestures() {
   });
 
   box.addEventListener('pointermove', e => {
-    if (!dragging) return;
+    if (!pointers.has(e.pointerId)) return;
     const p = chartPoint(e);
+    pointers.set(e.pointerId, p);
+
+    if (pointers.size >= 2) {
+      if (pinch) movePinch();
+      e.preventDefault();
+      return;
+    }
+    if (!dragging) return;
     if (Math.abs(p.x - downX) > 6 || Math.abs(p.y - downY) > 6) moved = true;
     pickPoint(p.x);
     e.preventDefault();
   });
 
   function end(e) {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (pointers.size > 0) return;
     if (!dragging) return;
     dragging = false;
+
+    // 双击：恢复默认时间区间
+    const now = Date.now();
+    if (!moved && now - lastTapAt < 320 && Math.abs(downX - lastTapX) < 24 && Math.abs(downY - lastTapY) < 24) {
+      lastTapAt = 0;
+      resetZoom();
+      hideCross();
+      if (e && e.preventDefault) e.preventDefault();
+      return;
+    }
+    lastTapAt = now; lastTapX = downX; lastTapY = downY;
+
     if (!moved && wasLocked) {
-      // 已经停在某一刻，再轻点一下 → 回到实时
       hideCross();
     } else {
-      // 松手后停在手指最后的位置
       S.locked = true;
       updateHint();
     }
