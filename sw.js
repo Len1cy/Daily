@@ -1,5 +1,5 @@
 /* 日常 · 离线外壳：网络优先，失败回退缓存 */
-const CACHE = 'daily-v4';
+const CACHE = 'daily-v5';
 const SHELL = [
   './',
   './index.html',
