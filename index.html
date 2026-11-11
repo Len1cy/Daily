@@ -33,6 +33,13 @@
   <!-- ================= 行情 ================= -->
   <main class="view" id="viewGold">
 
+    <div class="seg marketSeg" id="marketSeg">
+      <button type="button" data-m="gold" class="on">黄金</button>
+      <button type="button" data-m="cs">CS 大盘</button>
+    </div>
+
+    <div id="goldBlock">
+
     <section class="card hero">
       <div class="heroTop">
         <span class="label">实时价格 · 美元/盎司</span>
@@ -68,6 +75,35 @@
     </section>
 
     <div class="srcline">延迟约 1–3 秒 · 东方财富主源 / 腾讯备源</div>
+    </div>
+
+    <div id="csBlock" hidden>
+      <section class="card hero">
+        <div class="heroTop">
+          <span class="label">CS2 大盘指数 · SteamDT</span>
+          <span class="status" id="csStatus"><i></i><span>读取中…</span></span>
+        </div>
+        <div class="price" id="csPrice">—</div>
+        <div class="chg" id="csChg">—</div>
+        <div class="cny" id="csTime">—</div>
+      </section>
+
+      <section class="card chartCard">
+        <div class="seg" id="csSeg">
+          <button type="button" data-p="rt" class="on">实时</button>
+          <button type="button" data-p="day">日K</button>
+          <button type="button" data-p="week">周K</button>
+        </div>
+        <div class="chartBox" id="csBox">
+          <svg id="csChart" xmlns="http://www.w3.org/2000/svg"></svg>
+          <svg id="csCross" xmlns="http://www.w3.org/2000/svg"></svg>
+          <div class="bubble" id="csBubble" hidden></div>
+        </div>
+        <div class="hint" id="csHint">按住看点位 · 双指缩放时间 · 双击复位</div>
+      </section>
+
+      <div class="srcline">数据来自 SteamDT · 每 15 分钟同步 · 只存本机</div>
+    </div>
   </main>
 
   <!-- ================= 生日 ================= -->

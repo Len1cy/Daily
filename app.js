@@ -27,6 +27,7 @@ const S = {
   sessionStart: 0,
   births: [],
   tab: 'gold',
+  market: 'gold',
   cross: null,          // {mode, t|i}
   zoom: { h4: { count: 120, start: null }, day: { count: 120, start: null } },
   locked: false,
@@ -1128,6 +1129,9 @@ function boot() {
   $('#btnRefresh').addEventListener('click', () => refreshGold(true));
 
   initGestures();
+  initCSGestures();
+  document.querySelectorAll('#marketSeg button').forEach(b => b.addEventListener('click', () => setMarket(b.dataset.m)));
+  document.querySelectorAll('#csSeg button').forEach(b => b.addEventListener('click', () => setCSPeriod(b.dataset.p)));
   setTab('gold');
   loadPeriod(S.settings.period);
   refreshGold(false);
@@ -1156,4 +1160,382 @@ function scheduleRefresh() {
   }, S.settings.interval * 1000);
 }
 
+
+/* ================= CS 大盘（SteamDT 快照） ================= */
+const CS = {
+  idx: null,
+  day: [],
+  week: [],
+  period: 'rt',
+  zoom: { day: { count: 120, start: null }, week: { count: 60, start: null } },
+  cross: null,
+  locked: false
+};
+
+function csBox() { return document.getElementById('csBox'); }
+function csChartEl() { return document.getElementById('csChart'); }
+function csCrossEl() { return document.getElementById('csCross'); }
+
+async function loadCS(force) {
+  const bust = '?t=' + Math.floor(Date.now() / 60000);
+  try {
+    const r = await fetch('./cs/index.json' + bust, { cache: 'no-store' });
+    if (r.ok) CS.idx = await r.json();
+  } catch (e) { }
+  if (!CS.day.length || force) {
+    try {
+      const r = await fetch('./cs/kline-day.json' + bust, { cache: 'no-store' });
+      if (r.ok) CS.day = (await r.json()).data || [];
+    } catch (e) { }
+  }
+  if (!CS.week.length || force) {
+    try {
+      const r = await fetch('./cs/kline-week.json' + bust, { cache: 'no-store' });
+      if (r.ok) CS.week = (await r.json()).data || [];
+    } catch (e) { }
+  }
+  renderCS();
+}
+
+function renderCS() {
+  const el = document.getElementById('csPrice');
+  const st = document.getElementById('csStatus');
+  if (!CS.idx || !CS.idx.success) {
+    el.textContent = '—';
+    st.innerHTML = '<i></i><span>暂无数据</span>';
+    return;
+  }
+  const d = CS.idx.data;
+  const v = d.broadMarketIndex;
+  const diff = d.diffYesterday;
+  const pct = d.diffYesterdayRatio;
+  const up = diff >= 0;
+
+  el.textContent = num(v);
+  el.className = 'price' + (up ? '' : ' down');
+  const chg = document.getElementById('csChg');
+  chg.className = 'chg' + (up ? '' : ' down');
+  chg.textContent = (up ? '▲ +' : '▼ −') + num(Math.abs(diff)) + '    ' + (up ? '+' : '−') + Math.abs(pct).toFixed(2) + '%';
+
+  const t = new Date(d.updateTime * 1000);
+  document.getElementById('csTime').textContent =
+    '更新于 ' + pad2(t.getHours()) + ':' + pad2(t.getMinutes()) + ' · 每小时一个点';
+
+  st.innerHTML = '<i></i><span>已同步</span>';
+  st.className = 'status';
+  drawCS();
+}
+
+function csVisible(mode, list) {
+  const z = CS.zoom[mode] || { count: 120, start: null };
+  const total = list.length;
+  const minCount = Math.min(8, total);
+  const count = clamp(Math.round(z.count || 120), minCount, total);
+  const maxStart = Math.max(0, total - count);
+  const start = (z.start == null) ? maxStart : clamp(Math.round(z.start), 0, maxStart);
+  return { start, count };
+}
+
+function drawCS() {
+  const box = csBox();
+  if (!box) return;
+  const w = box.clientWidth, h = box.clientHeight;
+  if (w < 20 || h < 20) return;
+  csChartEl().setAttribute('viewBox', `0 0 ${w} ${h}`);
+  csCrossEl().setAttribute('viewBox', `0 0 ${w} ${h}`);
+  csCrossEl().innerHTML = '';
+
+  if (CS.period === 'rt') drawCSLine(w, h);
+  else drawCSCandles(w, h, CS.period === 'day' ? CS.day : CS.week, CS.period);
+
+  if (CS.locked && CS.cross) drawCSCross();
+}
+
+function drawCSLine(w, h) {
+  const padL = 44, padR = 14, padT = 14, padB = 22;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+  const raw = (CS.idx && CS.idx.data && CS.idx.data.historyMarketIndexList) || [];
+  const pts = raw.map(p => ({ ts: p[0], v: p[1] }));
+  if (pts.length < 2) {
+    csChartEl().innerHTML = `<text x="${w / 2}" y="${h / 2}" font-size="11" fill="#8e96a5" text-anchor="middle">暂无分时数据</text>`;
+    return;
+  }
+  let lo = Infinity, hi = -Infinity;
+  for (const p of pts) { if (p.v > hi) hi = p.v; if (p.v < lo) lo = p.v; }
+  const pad = (hi - lo) * 0.25 || 1;
+  const top = hi + pad, bot = lo - pad;
+  const y = v => padT + (top - v) / (top - bot) * plotH;
+  const x = i => padL + i / (pts.length - 1) * plotW;
+
+  let svg = `<defs><linearGradient id="csg" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#e0503f" stop-opacity="0.20"/><stop offset="1" stop-color="#e0503f" stop-opacity="0"/>
+  </linearGradient></defs>`;
+
+  for (let i = 0; i <= 3; i++) {
+    const gy = padT + i * plotH / 3;
+    svg += `<line x1="${padL}" x2="${w - padR}" y1="${gy}" y2="${gy}" stroke="rgba(120,132,160,.16)" stroke-dasharray="3 4"/>`;
+    svg += `<text x="${padL - 6}" y="${gy + 3.5}" font-size="9.5" fill="#8e96a5" text-anchor="end">${Math.round(hi - i * (hi - lo) / 3).toLocaleString()}</text>`;
+  }
+
+  const line = pts.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.v).toFixed(1)).join('');
+  svg += `<path d="${line}L${x(pts.length - 1).toFixed(1)} ${h - padB}L${x(0).toFixed(1)} ${h - padB}Z" fill="url(#csg)"/>`;
+  svg += `<path d="${line}" fill="none" stroke="#e0503f" stroke-width="2" stroke-linejoin="round"/>`;
+  svg += `<circle cx="${x(pts.length - 1)}" cy="${y(pts[pts.length - 1].v)}" r="3" fill="#fff" stroke="#e0503f" stroke-width="1.8"/>`;
+
+  const fmt = ts => { const d = new Date(ts * 1000); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); };
+  svg += `<text x="${padL}" y="${h - 6}" font-size="9.5" fill="#8e96a5">${fmt(pts[0].ts)}</text>`;
+  svg += `<text x="${w - padR}" y="${h - 6}" font-size="9.5" fill="#8e96a5" text-anchor="end">${fmt(pts[pts.length - 1].ts)}</text>`;
+
+  csChartEl().innerHTML = svg;
+}
+
+function drawCSCandles(w, h, list, mode) {
+  const padL = 10, padR = 50, padT = 12, padB = 22;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+
+  if (!list || list.length < 2) {
+    csChartEl().innerHTML = `<text x="${w / 2}" y="${h / 2}" font-size="11" fill="#8e96a5" text-anchor="middle">${mode === 'week' ? '周K 还没拉到（配额）' : '正在读取 K 线…'}</text>`;
+    return;
+  }
+
+  const win = csVisible(mode, list);
+  const view = list.slice(win.start, win.start + win.count);
+  let hi = -Infinity, lo = Infinity;
+  for (const r of view) { const H = +r[3], L = +r[4]; if (H > hi) hi = H; if (L < lo) lo = L; }
+  const span = (hi - lo) || 1;
+  const y = v => padT + (hi - v) / span * plotH;
+  const step = plotW / view.length;
+  const bw = clamp(step * 0.62, 1.2, 14);
+
+  let svg = '';
+  for (let i = 0; i <= 3; i++) {
+    const gy = padT + i * plotH / 3;
+    svg += `<line x1="${padL}" x2="${w - padR}" y1="${gy}" y2="${gy}" stroke="rgba(120,132,160,.16)" stroke-dasharray="3 4"/>`;
+    svg += `<text x="${w - padR + 6}" y="${gy + 3.5}" font-size="9.5" fill="#8e96a5">${Math.round(hi - i * span / 3).toLocaleString()}</text>`;
+  }
+
+  view.forEach((r, i) => {
+    const o = +r[1], c = +r[2], gh = +r[3], gl = +r[4];
+    const cx = padL + step * i + step / 2;
+    const up = c >= o;
+    const col = up ? '#e02b2b' : '#0b9d5a';
+    svg += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${y(gh).toFixed(1)}" y2="${y(gl).toFixed(1)}" stroke="${col}" stroke-width="1"/>`;
+    const yTop = y(Math.max(o, c)), yBot = y(Math.min(o, c));
+    svg += `<rect x="${(cx - bw / 2).toFixed(1)}" y="${yTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, yBot - yTop).toFixed(1)}" fill="${col}" rx="${Math.min(2, bw / 3).toFixed(1)}"/>`;
+  });
+
+  const fmt = ts => { const d = new Date(ts * 1000); return (d.getMonth() + 1) + '/' + d.getDate(); };
+  svg += `<text x="${padL}" y="${h - 6}" font-size="9.5" fill="#8e96a5">${fmt(+view[0][0])}</text>`;
+  svg += `<text x="${w - padR}" y="${h - 6}" font-size="9.5" fill="#8e96a5" text-anchor="end">${fmt(+view[view.length - 1][0])}</text>`;
+
+  csChartEl().innerHTML = svg;
+}
+
+function drawCSCross() {
+  const box = csBox();
+  if (!box) return;
+  const w = box.clientWidth, h = box.clientHeight;
+  const bubble = document.getElementById('csBubble');
+  let px = 0, py = 0, html = '';
+
+  if (CS.period === 'rt') {
+    const padL = 44, padR = 14, padT = 14, padB = 22;
+    const raw = (CS.idx && CS.idx.data && CS.idx.data.historyMarketIndexList) || [];
+    if (raw.length < 2) return;
+    const pts = raw.map(p => ({ ts: p[0], v: p[1] }));
+    let lo = Infinity, hi = -Infinity;
+    for (const p of pts) { if (p.v > hi) hi = p.v; if (p.v < lo) lo = p.v; }
+    const pad = (hi - lo) * 0.25 || 1;
+    const top = hi + pad, bot = lo - pad;
+    const plotW = w - padL - padR, plotH = h - padT - padB;
+    const i = clamp(CS.cross.i, 0, pts.length - 1);
+    px = padL + i / (pts.length - 1) * plotW;
+    py = padT + (top - pts[i].v) / (top - bot) * plotH;
+    const d = new Date(pts[i].ts * 1000);
+    html = `<div class="t">${pad2(d.getHours())}:${pad2(d.getMinutes())}</div>
+      <div class="p">${num(pts[i].v)}</div>`;
+  } else {
+    const list = CS.period === 'day' ? CS.day : CS.week;
+    if (!list || list.length < 2) return;
+    const padL = 10, padR = 50, padT = 12, padB = 22;
+    const plotW = w - padL - padR, plotH = h - padT - padB;
+    const win = csVisible(CS.period, list);
+    const view = list.slice(win.start, win.start + win.count);
+    const local = clamp(CS.cross.i - win.start, 0, view.length - 1);
+    let hi = -Infinity, lo = Infinity;
+    for (const r of view) { if (+r[3] > hi) hi = +r[3]; if (+r[4] < lo) lo = +r[4]; }
+    const span = (hi - lo) || 1;
+    const step = plotW / view.length;
+    const r = view[local];
+    px = padL + step * local + step / 2;
+    py = padT + (hi - (+r[2])) / span * plotH;
+    const pct = ((+r[2]) - (+r[1])) / (+r[1]) * 100;
+    const d = new Date(+r[0] * 1000);
+    html = `<div class="t">${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}</div>
+      <div class="p">${num(+r[2])}<span class="u ${pct >= 0 ? 'up' : 'down'}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span></div>
+      <div class="oh"><span>开 <b>${num(+r[1])}</b></span><span>高 <b>${num(+r[3])}</b></span></div>
+      <div class="oh"><span>低 <b>${num(+r[4])}</b></span><span>收 <b>${num(+r[2])}</b></span></div>`;
+  }
+
+  csCrossEl().innerHTML =
+    `<line x1="${px}" x2="${px}" y1="12" y2="${h - 22}" stroke="#5b616b" stroke-dasharray="3 3"/>` +
+    `<line x1="10" x2="${px}" y1="${py}" y2="${py}" stroke="#5b616b" stroke-dasharray="3 3"/>` +
+    `<circle cx="${px}" cy="${py}" r="4.5" fill="#fff" stroke="#14171c" stroke-width="1.5"/>`;
+
+  bubble.innerHTML = html;
+  bubble.hidden = false;
+  const bw = bubble.offsetWidth, bh = bubble.offsetHeight;
+  bubble.style.left = clamp(px, bw / 2 + 4, w - bw / 2 - 4) + 'px';
+  let top = py - 12, below = false;
+  if (top - bh < 4) { top = py + 14; below = true; }
+  bubble.style.top = top + 'px';
+  bubble.style.transform = below ? 'translate(-50%,0)' : 'translate(-50%,-100%)';
+}
+
+function csHideCross() {
+  CS.cross = null;
+  CS.locked = false;
+  csCrossEl().innerHTML = '';
+  document.getElementById('csBubble').hidden = true;
+  document.getElementById('csHint').textContent = '按住看点位 · 双指缩放时间 · 双击复位';
+}
+
+function csPick(x) {
+  const box = csBox();
+  const w = box.clientWidth;
+  if (CS.period === 'rt') {
+    const raw = (CS.idx && CS.idx.data && CS.idx.data.historyMarketIndexList) || [];
+    if (raw.length < 2) return;
+    const padL = 44, padR = 14;
+    const i = clamp(Math.round((x - padL) / (w - padL - padR) * (raw.length - 1)), 0, raw.length - 1);
+    CS.cross = { i };
+  } else {
+    const list = CS.period === 'day' ? CS.day : CS.week;
+    if (!list || list.length < 2) return;
+    const padL = 10, padR = 50;
+    const win = csVisible(CS.period, list);
+    const step = (w - padL - padR) / win.count;
+    const local = clamp(Math.floor((x - padL) / step), 0, win.count - 1);
+    CS.cross = { i: win.start + local };
+  }
+  drawCSCross();
+}
+
+function initCSGestures() {
+  const box = csBox();
+  const ptrs = new Map();
+  let pinch = null, dragging = false, downX = 0, downY = 0, moved = false, wasLocked = false;
+  let lastTapAt = 0, lastTapX = 0;
+
+  function firePinch() {
+    const vals = [...ptrs.values()];
+    if (vals.length < 2 || CS.period === 'rt') { pinch = null; return; }
+    const a = vals[0], b = vals[1];
+    const list = CS.period === 'day' ? CS.day : CS.week;
+    if (!list || list.length < 2) { pinch = null; return; }
+    const w = box.clientWidth;
+    const padL = 10, padR = 50;
+    const win = csVisible(CS.period, list);
+    const barW = (w - padL - padR) / win.count;
+    const mid = (a.x + b.x) / 2;
+    pinch = {
+      d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+      count0: win.count,
+      idxAtMid: win.start + (mid - padL) / barW,
+      total: list.length
+    };
+    dragging = false;
+    moved = true;
+    csHideCross();
+  }
+
+  box.addEventListener('pointerdown', e => {
+    try { box.setPointerCapture(e.pointerId); } catch (err) { }
+    const r = box.getBoundingClientRect();
+    const p = { x: e.clientX - r.left, y: e.clientY - r.top };
+    ptrs.set(e.pointerId, p);
+    if (ptrs.size === 2) { firePinch(); e.preventDefault(); return; }
+    if (ptrs.size > 2) return;
+    downX = p.x; downY = p.y; moved = false; wasLocked = CS.locked; dragging = true;
+    csPick(p.x);
+    e.preventDefault();
+  });
+
+  box.addEventListener('pointermove', e => {
+    if (!ptrs.has(e.pointerId)) return;
+    const r = box.getBoundingClientRect();
+    const p = { x: e.clientX - r.left, y: e.clientY - r.top };
+    ptrs.set(e.pointerId, p);
+
+    if (ptrs.size >= 2) {
+      if (pinch && CS.period !== 'rt') {
+        const vals = [...ptrs.values()];
+        const a = vals[0], b = vals[1];
+        const d = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+        const list = CS.period === 'day' ? CS.day : CS.week;
+        const w = box.clientWidth;
+        const padL = 10, padR = 50;
+        const count = clamp(Math.round(pinch.count0 / (d / pinch.d0)), Math.min(8, pinch.total), pinch.total);
+        const barW = (w - padL - padR) / count;
+        const mid = (a.x + b.x) / 2;
+        let start = Math.round(pinch.idxAtMid - (mid - padL) / barW);
+        start = clamp(start, 0, Math.max(0, pinch.total - count));
+        CS.zoom[CS.period] = { count, start };
+        drawCS();
+      }
+      e.preventDefault();
+      return;
+    }
+    if (!dragging) return;
+    if (Math.abs(p.x - downX) > 6 || Math.abs(p.y - downY) > 6) moved = true;
+    csPick(p.x);
+    e.preventDefault();
+  });
+
+  function end(e) {
+    ptrs.delete(e.pointerId);
+    if (ptrs.size < 2) pinch = null;
+    if (ptrs.size > 0) return;
+    if (!dragging) return;
+    dragging = false;
+
+    const now = Date.now();
+    if (!moved && now - lastTapAt < 320 && Math.abs(downX - lastTapX) < 24) {
+      lastTapAt = 0;
+      if (CS.period !== 'rt') {
+        CS.zoom[CS.period] = { count: CS.period === 'week' ? 60 : 120, start: null };
+        drawCS();
+        toast('已恢复默认区间');
+      }
+      csHideCross();
+      e.preventDefault();
+      return;
+    }
+    lastTapAt = now; lastTapX = downX;
+
+    if (!moved && wasLocked) csHideCross();
+    else { CS.locked = true; }
+    e.preventDefault();
+  }
+
+  box.addEventListener('pointerup', end);
+  box.addEventListener('pointercancel', end);
+}
+
+function setMarket(m) {
+  S.market = m;
+  document.querySelectorAll('#marketSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === m));
+  document.getElementById('goldBlock').hidden = m !== 'gold';
+  document.getElementById('csBlock').hidden = m !== 'cs';
+  document.getElementById('pageSub').textContent = m === 'gold' ? '伦敦金现货 · 实时' : 'CS2 大盘 · SteamDT';
+  if (m === 'cs') { loadCS(false); setTimeout(drawCS, 30); }
+  else setTimeout(renderChart, 30);
+}
+
+function setCSPeriod(p) {
+  CS.period = p;
+  document.querySelectorAll('#csSeg button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+  csHideCross();
+  drawCS();
+}
 boot();
