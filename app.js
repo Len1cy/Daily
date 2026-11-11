@@ -30,6 +30,7 @@ const S = {
   market: 'gold',
   cross: null,          // {mode, t|i}
   zoom: { h4: { count: 120, start: null }, day: { count: 120, start: null } },
+  minuteFail: false,
   locked: false,
   lastFetch: 0,
   failed: false,
@@ -405,6 +406,7 @@ async function fetchMinute() {
   }
   S.sessionStart = today;
   S.minute = pts.sort((a, b) => a.t - b.t);
+  S.minuteFail = false;
 }
 
 async function fetchCandles(mode) {
@@ -567,7 +569,7 @@ function drawMinute(w, h) {
   const prev = S.quote ? S.quote.prev : (pts[0] ? pts[0].p : 0);
 
   if (pts.length < 2 || !(prev > 0)) {
-    chartEl.innerHTML = `<text x="${w / 2}" y="${h / 2}" font-size="11" fill="#a4a9b2" text-anchor="middle">正在获取今日分时…</text>`;
+    chartEl.innerHTML = `<text x="${w / 2}" y="${h / 2}" font-size="11" fill="#a4a9b2" text-anchor="middle">${S.minuteFail ? '数据源暂时不可用 · 自动重试中' : '正在获取今日分时…'}</text>`;
     return;
   }
 
@@ -904,6 +906,33 @@ function initGestures() {
   box.addEventListener('pointercancel', end);
 }
 
+
+/* ---------- 分时缓存：接口挂了也能看图 ---------- */
+const LS_MIN = 'daily.minute.v1';
+
+function saveMinuteCache() {
+  try {
+    if (!S.minute.length) return;
+    localStorage.setItem(LS_MIN, JSON.stringify({
+      day: S.sessionStart,
+      t: S.minute.map(p => p.t),
+      p: S.minute.map(p => p.p)
+    }));
+  } catch (e) { }
+}
+
+function loadMinuteCache() {
+  try {
+    const raw = localStorage.getItem(LS_MIN);
+    if (!raw) return false;
+    const o = JSON.parse(raw);
+    if (!o || !o.t || !o.t.length) return false;
+    if (o.day && S.sessionStart && o.day !== S.sessionStart) return false;
+    S.sessionStart = o.day || 0;
+    S.minute = o.t.map((t, i) => ({ t, p: o.p[i] }));
+    return true;
+  } catch (e) { return false; }
+}
 /* ================= 启动与刷新 ================= */
 function loadSettings() {
   try {
@@ -926,7 +955,9 @@ async function refreshGold(force) {
   }
   try { S.fx = await fetchFx(); } catch (e) { }
   try {
-    if (!S.minute.length || (S.quote && Date.now() - S.quote.ts < 4 * 60000)) await fetchMinute();
+    if (!S.minute.length || (S.quote && Date.now() - S.quote.ts < 4 * 60000)) {
+      try { await fetchMinute(); saveMinuteCache(); } catch (e) { S.minuteFail = true; }
+    }
   } catch (e) { }
 
   renderGold();
@@ -1087,6 +1118,7 @@ function toast(msg) {
 function boot() {
   loadSettings();
   loadBirths();
+  loadMinuteCache();
   buildChips();
 
   document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
@@ -1165,9 +1197,8 @@ function scheduleRefresh() {
 const CS = {
   idx: null,
   day: [],
-  week: [],
   period: 'rt',
-  zoom: { day: { count: 120, start: null }, week: { count: 60, start: null } },
+  zoom: { day: { count: 120, start: null } },
   cross: null,
   locked: false
 };
@@ -1188,12 +1219,7 @@ async function loadCS(force) {
       if (r.ok) CS.day = (await r.json()).data || [];
     } catch (e) { }
   }
-  if (!CS.week.length || force) {
-    try {
-      const r = await fetch('./cs/kline-week.json' + bust, { cache: 'no-store' });
-      if (r.ok) CS.week = (await r.json()).data || [];
-    } catch (e) { }
-  }
+
   renderCS();
 }
 
@@ -1246,7 +1272,7 @@ function drawCS() {
   csCrossEl().innerHTML = '';
 
   if (CS.period === 'rt') drawCSLine(w, h);
-  else drawCSCandles(w, h, CS.period === 'day' ? CS.day : CS.week, CS.period);
+  else drawCSCandles(w, h, CS.day, 'day');
 
   if (CS.locked && CS.cross) drawCSCross();
 }
@@ -1294,7 +1320,7 @@ function drawCSCandles(w, h, list, mode) {
   const plotW = w - padL - padR, plotH = h - padT - padB;
 
   if (!list || list.length < 2) {
-    csChartEl().innerHTML = `<text x="${w / 2}" y="${h / 2}" font-size="11" fill="#8e96a5" text-anchor="middle">${mode === 'week' ? '周K 还没拉到（配额）' : '正在读取 K 线…'}</text>`;
+    csChartEl().innerHTML = `<text x="${w / 2}" y="${h / 2}" font-size="11" fill="#8e96a5" text-anchor="middle">正在读取 K 线…</text>`;
     return;
   }
 
@@ -1355,7 +1381,7 @@ function drawCSCross() {
     html = `<div class="t">${pad2(d.getHours())}:${pad2(d.getMinutes())}</div>
       <div class="p">${num(pts[i].v)}</div>`;
   } else {
-    const list = CS.period === 'day' ? CS.day : CS.week;
+    const list = CS.day;
     if (!list || list.length < 2) return;
     const padL = 10, padR = 50, padT = 12, padB = 22;
     const plotW = w - padL - padR, plotH = h - padT - padB;
@@ -1410,7 +1436,7 @@ function csPick(x) {
     const i = clamp(Math.round((x - padL) / (w - padL - padR) * (raw.length - 1)), 0, raw.length - 1);
     CS.cross = { i };
   } else {
-    const list = CS.period === 'day' ? CS.day : CS.week;
+    const list = CS.day;
     if (!list || list.length < 2) return;
     const padL = 10, padR = 50;
     const win = csVisible(CS.period, list);
@@ -1431,7 +1457,7 @@ function initCSGestures() {
     const vals = [...ptrs.values()];
     if (vals.length < 2 || CS.period === 'rt') { pinch = null; return; }
     const a = vals[0], b = vals[1];
-    const list = CS.period === 'day' ? CS.day : CS.week;
+    const list = CS.day;
     if (!list || list.length < 2) { pinch = null; return; }
     const w = box.clientWidth;
     const padL = 10, padR = 50;
@@ -1472,7 +1498,7 @@ function initCSGestures() {
         const vals = [...ptrs.values()];
         const a = vals[0], b = vals[1];
         const d = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
-        const list = CS.period === 'day' ? CS.day : CS.week;
+        const list = CS.day;
         const w = box.clientWidth;
         const padL = 10, padR = 50;
         const count = clamp(Math.round(pinch.count0 / (d / pinch.d0)), Math.min(8, pinch.total), pinch.total);
@@ -1503,7 +1529,7 @@ function initCSGestures() {
     if (!moved && now - lastTapAt < 320 && Math.abs(downX - lastTapX) < 24) {
       lastTapAt = 0;
       if (CS.period !== 'rt') {
-        CS.zoom[CS.period] = { count: CS.period === 'week' ? 60 : 120, start: null };
+        CS.zoom[CS.period] = { count: 120, start: null };
         drawCS();
         toast('已恢复默认区间');
       }
