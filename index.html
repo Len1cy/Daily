@@ -59,6 +59,10 @@
       <div class="cap">切到后台自动暂停，回到前台立刻补刷</div>
     </div>
 
+    <div class="gtitle">模块</div>
+    <div class="card rows" id="setModules"></div>
+    <div class="cap">关掉的模块会从「今日」隐藏，仍可在「模块」里打开</div>
+
     <div class="gtitle">数据</div>
     <div class="card rows">
       <div class="row"><span>重要日子</span><span class="muted" id="birthCount">0 条</span></div>
@@ -86,6 +90,19 @@
       <button type="button" id="sheetAction" hidden>＋</button>
     </div>
     <div class="sheetBody" id="sheetBody"></div>
+  </aside>
+
+  <!-- ============ 单品详情（资产三级页） ============ -->
+  <aside class="sheetView itemView" id="itemView" hidden>
+    <div class="itemBar">
+      <button type="button" id="itemClose" aria-label="关闭">
+        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg>
+      </button>
+      <button type="button" id="itemEdit" aria-label="编辑">
+        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 3.5l3 3L7 16H4v-3z"/></svg>
+      </button>
+    </div>
+    <div class="itemBody" id="itemBody"></div>
   </aside>
 
   <nav class="tabbar">
