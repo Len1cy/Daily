@@ -1367,7 +1367,7 @@ function drawCSLine(w, h) {
     svg += `<text x="${padL - 6}" y="${gy + 3.5}" font-size="9.5" fill="#8e96a5" text-anchor="end">${Math.round(hi - i * (hi - lo) / 3).toLocaleString()}</text>`;
   }
 
-  const line = pts.map((p, i) => (i ? 'L' : 'M') + xOf(p.d).toFixed(1) + ' ' + y(p.v).toFixed(1)).join('');
+  const line = pts.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.v).toFixed(1)).join('');
   svg += `<path d="${line}L${x(pts.length - 1).toFixed(1)} ${h - padB}L${x(0).toFixed(1)} ${h - padB}Z" fill="url(#csg)"/>`;
   svg += `<path d="${line}" fill="none" stroke="#e0503f" stroke-width="2" stroke-linejoin="round"/>`;
   svg += `<circle cx="${x(pts.length - 1)}" cy="${y(pts[pts.length - 1].v)}" r="3" fill="#fff" stroke="#e0503f" stroke-width="1.8"/>`;
@@ -1831,10 +1831,12 @@ function openModule(id) {
   if (id === 'gold') {
     renderGold(); renderRange();
     setTimeout(() => { loadPeriod(S.settings.period); renderChart(); }, 40);
+    requestAnimationFrame(() => requestAnimationFrame(() => { renderChart(); renderGold(); }));
   }
   if (id === 'cs2') {
     loadCS(false);
     setTimeout(drawCS, 60);
+    requestAnimationFrame(() => requestAnimationFrame(drawCS));
   }
   if (id === 'important') renderBirths();
   if (id === 'assets') renderAssets();
@@ -2275,6 +2277,7 @@ function renderAssetItem() {
   const per = a.price / days;
   const stName = a.status === 'retired' ? '已退役' : (a.status === 'sold' ? '已卖出' : '已服役');
   const bd = new Date(a.buy);
+  costCtx = null;
 
   body.innerHTML =
     `<div class="itemHero">
@@ -2285,7 +2288,11 @@ function renderAssetItem() {
     </div>
     <section class="card itemChart">
       <h4>日均成本</h4>
-      ${costChartSvg(a, days)}
+      <div class="costBox" id="costBox">
+        <div id="costChartHost" style="position:absolute;inset:0">${costChartSvg(a, days)}</div>
+        <svg id="costCross" viewBox="0 0 320 190" preserveAspectRatio="none"></svg>
+        <div class="bubble" id="costBubble" hidden></div>
+      </div>
     </section>
     <section class="card rows itemRows">
       <div class="row"><span>价格</span><b>${money(a.price)}</b></div>
@@ -2297,8 +2304,71 @@ function renderAssetItem() {
       删除
     </button>`;
 
+  costCtx = { price: a.price, days, buy: new Date(a.buy) };
+  const cc = document.getElementById('costCross'); if (cc) cc.innerHTML = '';
+  const cb = document.getElementById('costBubble'); if (cb) cb.hidden = true;
+  initCostChart();
+
   const del = document.getElementById('itemDelete');
   if (del) del.addEventListener('click', () => { deleteEditor('asset', a.id); closeAssetItem(); });
+}
+
+/* ---------- 日均成本曲线：长按看第 N 天 ---------- */
+let costCtx = null, costPressing = false;
+
+function openCostCross(clientX) {
+  const box = document.getElementById('costBox');
+  const cross = document.getElementById('costCross');
+  const bubble = document.getElementById('costBubble');
+  if (!box || !cross || !bubble || !costCtx) return;
+
+  const W = 320, H = 190, padL = 6, padR = 42, padT = 10, padB = 24;
+  const r = box.getBoundingClientRect();
+  const xSvg = clamp((clientX - r.left) / r.width * W, padL, W - padR);
+  const t = clamp((xSvg - padL) / (W - padL - padR), 0, 1);
+  const day = Math.max(1, Math.min(costCtx.days, Math.round(1 + t * (costCtx.days - 1))));
+  const v = costCtx.price / day;
+
+  const lgc = x => Math.log10(Math.max(0.01, x));
+  const top = lgc(costCtx.price), bot = lgc(costCtx.price / costCtx.days);
+  const span = (top - bot) || 1;
+  const px = padL + (day - 1) / Math.max(1, costCtx.days - 1) * (W - padL - padR);
+  const py = padT + (top - lgc(v)) / span * (H - padT - padB);
+
+  cross.innerHTML =
+    `<line x1="${px.toFixed(1)}" x2="${px.toFixed(1)}" y1="${padT}" y2="${H - padB}" stroke="#5b616b" stroke-dasharray="3 3" stroke-width="1"/>` +
+    `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3.8" fill="#fff" stroke="#6cc51f" stroke-width="2"/>`;
+
+  const d = new Date(costCtx.buy);
+  d.setDate(d.getDate() + day - 1);
+  bubble.innerHTML =
+    `<div class="t">第 ${day} 天</div>` +
+    `<div class="p">${money(v)}<span class="u">/天</span></div>` +
+    `<div class="oh"><span>${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}</span></div>`;
+  bubble.hidden = false;
+
+  const bw = bubble.offsetWidth, bh = bubble.offsetHeight;
+  const leftCss = px / W * r.width;
+  bubble.style.left = clamp(leftCss, bw / 2 + 4, r.width - bw / 2 - 4) + 'px';
+  const topCss = py / H * r.height - 12;
+  bubble.style.top = (topCss - bh < 4 ? topCss + bh + 24 : topCss) + 'px';
+  bubble.style.transform = topCss - bh < 4 ? 'translate(-50%,0)' : 'translate(-50%,-100%)';
+}
+
+function initCostChart() {
+  const box = document.getElementById('costBox');
+  if (!box) return;
+  box.addEventListener('pointerdown', e => {
+    costPressing = true;
+    try { box.setPointerCapture(e.pointerId); } catch (err) { }
+    openCostCross(e.clientX);
+    e.preventDefault();
+  });
+  box.addEventListener('pointermove', e => {
+    if (costPressing) openCostCross(e.clientX);
+  });
+  box.addEventListener('pointerup', () => { costPressing = false; });
+  box.addEventListener('pointercancel', () => { costPressing = false; });
 }
 /* ---------- 启动（v2） ---------- */
 function bootV2() {
