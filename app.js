@@ -991,6 +991,11 @@ async function loadPeriod(mode) {
             return;
           }
         } else {
+          if (loadH4Cache()) {
+            renderChart();
+            toast('数据源不可用 · 显示上次的 4 小时线');
+            return;
+          }
           chartEl.innerHTML = `<text x="50%" y="50%" font-size="11.5" fill="#a4a9b2" text-anchor="middle">4 小时线数据源暂不可用，可先看日线</text>`;
           return;
         }
@@ -1001,6 +1006,19 @@ async function loadPeriod(mode) {
 }
 
 
+
+/* ---------- 4 小时线缓存（源不可用时用上次的） ---------- */
+const LS_H4 = 'daily.h4.v1';
+function saveH4Cache() {
+  try { if (S.h4 && S.h4.length > 2) localStorage.setItem(LS_H4, JSON.stringify(S.h4)); } catch (e) { }
+}
+function loadH4Cache() {
+  try {
+    const a = JSON.parse(localStorage.getItem(LS_H4) || '[]');
+    if (Array.isArray(a) && a.length > 2) { S.h4 = a; return true; }
+  } catch (e) { }
+  return false;
+}
 /* ---------- 日线备用源：新浪 JSONP（东财挂了也能看日线） ---------- */
 function fetchCandlesSina() {
   return new Promise((resolve, reject) => {
@@ -1206,6 +1224,7 @@ function boot() {
 
   initGestures();
   initCSGestures();
+  initSwipeBack();
   document.querySelectorAll('#seg button').forEach(b => b.addEventListener('click', () => loadPeriod(b.dataset.p)));
   document.querySelectorAll('#csSeg button').forEach(b => b.addEventListener('click', () => setCSPeriod(b.dataset.p)));
   setTab('gold');
@@ -2133,12 +2152,66 @@ function renderSettings() {
   }
 }
 
+
+/* ---------- 侧滑返回 ---------- */
+function initSwipeBack() {
+  const sv = document.getElementById('sheetView');
+  if (!sv) return;
+  let sx = 0, sy = 0, dx = 0, tracking = false, active = false;
+
+  sv.addEventListener('pointerdown', e => {
+    if (!currentModule) return;
+    const left = sv.getBoundingClientRect().left;
+    if (e.clientX - left > 34) return;
+    tracking = true; active = false; sx = e.clientX; sy = e.clientY; dx = 0;
+  }, { passive: true });
+
+  sv.addEventListener('pointermove', e => {
+    if (!tracking) return;
+    const mx = e.clientX - sx, my = e.clientY - sy;
+    if (!active) {
+      if (Math.abs(my) > 16 && Math.abs(my) > Math.abs(mx)) { tracking = false; return; }
+      if (mx < 12) return;
+      active = true;
+      sv.classList.add('dragging');
+    }
+    dx = Math.max(0, mx);
+    sv.style.transform = 'translateX(' + dx + 'px)';
+    if (e.cancelable) e.preventDefault();
+  });
+
+  function finish() {
+    if (!tracking) { return; }
+    tracking = false;
+    if (!active) { return; }
+    active = false;
+    sv.classList.remove('dragging');
+    sv.classList.add('closing');
+    if (dx > 88) {
+      sv.style.transform = 'translateX(100%)';
+      setTimeout(() => {
+        sv.classList.remove('closing');
+        sv.style.transform = '';
+        closeModule();
+      }, 190);
+    } else {
+      sv.style.transform = 'translateX(0)';
+      setTimeout(() => sv.classList.remove('closing'), 190);
+    }
+    dx = 0;
+  }
+
+  sv.addEventListener('pointerup', finish);
+  sv.addEventListener('pointercancel', finish);
+  sv.addEventListener('pointerleave', finish);
+}
 /* ---------- 启动（v2） ---------- */
 function bootV2() {
   loadSettings();
   loadBirths();
   loadAssets();
   loadMinuteCache();
+  loadH4Cache();
 
   const leadBox = document.getElementById('setLead');
   if (leadBox) leadBox.innerHTML = LEADS.map(d => `<button type="button" class="chip" data-v="${d}">${leadText(d)}</button>`).join('');
@@ -2185,6 +2258,7 @@ function bootV2() {
 
   initGestures();
   initCSGestures();
+  initSwipeBack();
 
   goTab('dash');
   renderSettings();
