@@ -470,9 +470,8 @@ function renderGold() {
       (up ? '+' : '−') + Math.abs(ci.pct).toFixed(2) + '%';
   }
 
-  $('#dayHigh').textContent = num(q.high);
-  $('#dayLow').textContent = num(q.low);
-  $('#dayOpen').textContent = num(q.open);
+  if (typeof renderRange === 'function') renderRange();
+  if (typeof renderDash === 'function' && S.tab === 'dash') renderDash();
 
   const gram = S.fx > 0 ? q.price / OZ * S.fx : 0;
   $('#cny').innerHTML = gram > 0
@@ -1250,6 +1249,7 @@ function renderCS() {
   st.innerHTML = '<i></i><span>已同步</span>';
   st.className = 'status';
   drawCS();
+  if (typeof renderDash === 'function') renderDash();
 }
 
 function csVisible(mode, list) {
@@ -1564,4 +1564,597 @@ function setCSPeriod(p) {
   csHideCross();
   drawCS();
 }
-boot();
+
+/* =====================================================================
+   v2.0 外壳：Bento 首页 + 模块库 + 二级抽屉
+   ===================================================================== */
+
+const MODULES = [
+  { id: 'gold',      name: '伦敦金现货', sub: '实时价 · 分时 / 4小时 / 日线', icon: '🥇', accent: '#F59E0B', size: 'span-2', cat: '金融盯盘' },
+  { id: 'cs2',       name: 'CS2 大盘',   sub: 'SteamDT 指数 · 实时 / 日K',     icon: '📈', accent: '#3B82F6', size: 'span-1', cat: '金融盯盘' },
+  { id: 'important', name: '重要日子',   sub: '生日 · 纪念日 · 倒数日',         icon: '🎂', accent: '#F43F5E', size: 'span-1', cat: '生活记录' },
+  { id: 'assets',    name: '资产',       sub: '买的物件 · 日均成本',            icon: '📦', accent: '#22C55E', size: 'span-2', cat: '生活记录' },
+];
+
+const BLOCK_OF = { gold: '#goldBlock', cs2: '#csBlock', important: '#birthBlock', assets: '#assetBlock' };
+
+/* ---------- 资产 ---------- */
+const LS_ASSETS = 'daily.assets.v1';
+const ASSET_EMOJIS = ['📦', '⌚', '🎧', '📷', '💻', '⌨️', '🎮', '📱', '🛴', '🎸', '☕', '🖨️'];
+
+function loadAssets() {
+  try { S.assets = JSON.parse(localStorage.getItem(LS_ASSETS) || '[]') || []; }
+  catch (e) { S.assets = []; }
+}
+function saveAssets() {
+  try { localStorage.setItem(LS_ASSETS, JSON.stringify(S.assets)); } catch (e) { }
+}
+function assetDays(a) {
+  const p = String(a.buy || '').split('-');
+  const d = new Date(+p[0], (+p[1] || 1) - 1, +p[2] || 1);
+  const days = Math.round((startOfToday() - d) / 86400000) + 1;
+  return Math.max(1, isFinite(days) ? days : 1);
+}
+function assetStats() {
+  let total = 0, active = 0, retired = 0, sold = 0, perDay = 0;
+  for (const a of S.assets) {
+    if (a.status === 'sold') { sold++; continue; }
+    total += a.price;
+    if (a.status === 'retired') retired++;
+    else { active++; perDay += a.price / assetDays(a); }
+  }
+  return { total, active, retired, sold, perDay, count: S.assets.length };
+}
+function money(n) { return '¥' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 }); }
+
+/* ---------- 重要日子 ---------- */
+function dayInfo(b) {
+  if (b.type === 'countdown') {
+    const d = new Date(b.y || 2000, (b.m || 1) - 1, b.d || 1);
+    const days = Math.round((d - startOfToday()) / 86400000);
+    return { date: d, days, past: days < 0 };
+  }
+  const n = nextBirthday(b);
+  return { date: n.date, days: n.days, past: false };
+}
+
+function importantSorted() {
+  return S.births.map(b => ({ b, info: dayInfo(b) }))
+    .sort((x, y) => Math.abs(x.info.days) - Math.abs(y.info.days));
+}
+
+/* ---------- 区间条 ---------- */
+function renderRange() {
+  const q = S.quote;
+  const bar = document.getElementById('rangeBar');
+  if (!bar) return;
+  if (!q || !(q.high > q.low)) {
+    document.getElementById('rangeText').textContent = '—';
+    return;
+  }
+  const lo = q.low, hi = q.high, cur = q.price;
+  const pct = clamp((cur - lo) / (hi - lo) * 100, 0, 100);
+  document.getElementById('rangeDot').style.left = pct.toFixed(1) + '%';
+  document.getElementById('rangeFill').style.width = pct.toFixed(1) + '%';
+  document.getElementById('rangeText').textContent = '当前价处于今日 ' + pct.toFixed(0) + '% 位置';
+  document.getElementById('rangeLow').textContent = '今低 ' + num(lo);
+  document.getElementById('rangeMid').textContent = '开盘 ' + num(q.open);
+  document.getElementById('rangeHigh').textContent = '今高 ' + num(hi);
+}
+
+/* ---------- 今日 Bento ---------- */
+function renderDash() {
+  const bento = document.getElementById('bento');
+  if (!bento) return;
+  const hidden = S.settings.hidden || {};
+  let html = '';
+
+  // 黄金
+  if (!hidden.gold) {
+    const q = S.quote;
+    let price = '—', meta = '连接中…', cls = '';
+    if (q) {
+      const up = q.price >= q.prev;
+      price = num(q.price);
+      const diff = q.price - q.prev;
+      const pct = q.prev ? diff / q.prev * 100 : 0;
+      meta = (up ? '▲ +' : '▼ −') + num(Math.abs(diff)) + '  ' + (up ? '+' : '−') + Math.abs(pct).toFixed(2) + '% · ' + (S.fx > 0 ? (q.price / OZ * S.fx).toFixed(1) + ' 元/克' : '');
+      cls = up ? '' : ' down';
+    }
+    html += `<article class="bento-card span-2" data-module="gold" data-open="gold">
+      <div class="bc-top"><span class="bc-label">🥇 伦敦金现货</span><span class="bc-badge">${q ? hhmm(q.ts) + ' 更新' : '读取中'}</span></div>
+      <div class="bc-value${cls}" style="color:${q && q.price < q.prev ? '#0b9d5a' : '#e02b2b'}">${price}</div>
+      <div class="bc-meta">${meta}</div>
+    </article>`;
+  }
+
+  // CS2
+  if (!hidden.cs2) {
+    const d = (typeof CS !== 'undefined' && CS.idx) ? CS.idx.data : null;
+    let v = '—', m = '尚未同步';
+    if (d) {
+      v = num(d.broadMarketIndex);
+      m = (d.diffYesterday >= 0 ? '▲ +' : '▼ −') + num(Math.abs(d.diffYesterday)) + '  ' + (d.diffYesterday >= 0 ? '+' : '−') + Math.abs(d.diffYesterdayRatio).toFixed(2) + '%';
+    }
+    html += `<article class="bento-card span-1" data-module="cs2" data-open="cs2">
+      <div class="bc-top"><span class="bc-label">📈 CS2 大盘</span></div>
+      <div class="bc-value sm" style="color:${d && d.diffYesterday < 0 ? '#0b9d5a' : '#e0503f'}">${v}</div>
+      <div class="bc-meta">${m}</div>
+    </article>`;
+  }
+
+  // 重要日子
+  if (!hidden.important) {
+    const list = importantSorted();
+    const next = list[0];
+    let v = '—', m = '还没有记录';
+    if (next) {
+      const inf = next.info;
+      v = inf.past ? Math.abs(inf.days) + ' 天' : (inf.days === 0 ? '今天' : inf.days + ' 天');
+      m = next.b.name + ' · ' + (inf.past ? '已经 ' + Math.abs(inf.days) + ' 天' : (inf.days === 0 ? '就是今天' : '还有 ' + inf.days + ' 天'));
+    }
+    html += `<article class="bento-card span-1" data-module="important" data-open="important">
+      <div class="bc-top"><span class="bc-label">🎂 重要日子</span></div>
+      <div class="bc-value sm">${v}</div>
+      <div class="bc-meta">${m}</div>
+    </article>`;
+  }
+
+  // 资产
+  if (!hidden.assets) {
+    const st = assetStats();
+    html += `<article class="bento-card span-2" data-module="assets" data-open="assets">
+      <div class="bc-top"><span class="bc-label">📦 资产总额</span><span class="bc-badge">${st.count} 件</span></div>
+      <div class="bc-value">${money(st.total)}</div>
+      <div class="bc-meta">日均成本 ${money(st.perDay)} · 服役 ${st.active} / 退役 ${st.retired} / 卖出 ${st.sold}</div>
+    </article>`;
+  }
+
+  bento.innerHTML = html;
+  bento.querySelectorAll('[data-open]').forEach(el => {
+    el.addEventListener('click', () => openModule(el.dataset.open));
+  });
+}
+
+/* ---------- 模块库 ---------- */
+function renderHub() {
+  const box = document.getElementById('hubList');
+  if (!box) return;
+  const hidden = S.settings.hidden || {};
+  let html = '';
+  let lastCat = '';
+  for (const m of MODULES) {
+    if (m.cat !== lastCat) {
+      html += `<div class="gtitle"><span>${m.cat}</span><i></i></div>`;
+      lastCat = m.cat;
+    }
+    const on = !hidden[m.id];
+    html += `<div class="card rows" style="margin-bottom:10px">
+      <div class="hub-item">
+        <div class="hub-ic" style="color:${m.accent}">${m.icon}</div>
+        <div class="hub-name">${m.name}<small>${m.sub}</small></div>
+        <div class="hub-toggle ${on ? 'on' : ''}" data-toggle="${m.id}" style="--accent-sys:${m.accent}"><i></i></div>
+      </div>
+    </div>`;
+  }
+  html += `<div class="srcline">首页卡片可长按拖动排序（v2.1）· 关闭开关即从首页隐藏</div>`;
+  box.innerHTML = html;
+
+  box.querySelectorAll('[data-toggle]').forEach(t => {
+    t.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = t.dataset.toggle;
+      S.settings.hidden = S.settings.hidden || {};
+      S.settings.hidden[id] = !S.settings.hidden[id];
+      saveSettings();
+      renderHub();
+      renderDash();
+    });
+  });
+}
+
+/* ---------- 二级抽屉 ---------- */
+let currentModule = null;
+
+function openModule(id) {
+  const sel = BLOCK_OF[id];
+  const el = sel && document.querySelector(sel);
+  if (!el) return;
+  const m = MODULES.find(x => x.id === id);
+  currentModule = id;
+
+  document.getElementById('sheetBody').appendChild(el);
+  el.hidden = false;
+  document.getElementById('sheetTitle').textContent = m ? m.name : '详情';
+  document.getElementById('sheetView').hidden = false;
+
+  const action = document.getElementById('sheetAction');
+  action.hidden = !(id === 'important' || id === 'assets');
+  action.onclick = () => {
+    if (id === 'important') openEditor('day', null);
+    if (id === 'assets') openEditor('asset', null);
+  };
+
+  if (id === 'gold') {
+    renderGold(); renderRange();
+    setTimeout(() => { loadPeriod(S.settings.period); renderChart(); }, 40);
+  }
+  if (id === 'cs2') {
+    loadCS(false);
+    setTimeout(drawCS, 60);
+  }
+  if (id === 'important') renderBirths();
+  if (id === 'assets') renderAssets();
+}
+
+function closeModule() {
+  if (!currentModule) return;
+  const sel = BLOCK_OF[currentModule];
+  const el = sel && document.querySelector(sel);
+  if (el) { el.hidden = true; document.getElementById('pool').appendChild(el); }
+  document.getElementById('sheetView').hidden = true;
+  currentModule = null;
+  renderDash();
+}
+
+/* ---------- 主 Tab ---------- */
+function goTab(name) {
+  S.tab = name;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === name));
+  document.getElementById('viewDash').hidden = name !== 'dash';
+  document.getElementById('viewHub').hidden = name !== 'hub';
+  document.getElementById('viewSettings').hidden = name !== 'settings';
+  document.getElementById('btnRefresh').hidden = name !== 'dash';
+
+  const meta = {
+    dash: ['今日', '实时行情与日程摘要'],
+    hub: ['模块', '全部功能 · 可开关与排序'],
+    settings: ['设置', '提醒、刷新与数据'],
+  }[name];
+  document.getElementById('pageTitle').textContent = meta[0];
+  document.getElementById('pageSub').textContent = meta[1];
+
+  if (name === 'dash') renderDash();
+  if (name === 'hub') renderHub();
+  if (name === 'settings') renderSettings();
+}
+
+/* ---------- 资产列表 ---------- */
+function renderAssets() {
+  const box = document.getElementById('assetList');
+  if (!box) return;
+  const st = assetStats();
+  const f = S.assetFilter || 'all';
+  const filters = [['all', '全部'], ['active', '服役中'], ['retired', '已退役'], ['sold', '已卖出']];
+
+  let html = `
+    <section class="card asset-sum">
+      <div class="bc-label" style="font-size:11px;color:var(--muted);font-weight:600">总资产</div>
+      <div class="big">${money(st.total)}</div>
+      <div class="bc-meta" style="margin-top:6px">日均成本 ${money(st.perDay)} · 共 ${st.count} 件</div>
+      <div class="split">
+        <div><b>${st.active}</b><span>服役中</span></div>
+        <div><b>${st.retired}</b><span>已退役</span></div>
+        <div><b>${st.sold}</b><span>已卖出</span></div>
+      </div>
+    </section>
+    <div class="asset-filters">${filters.map(([k, n]) =>
+      `<button type="button" class="chip ${f === k ? 'on' : ''}" data-f="${k}">${n}</button>`).join('')}
+    </div>
+    <div class="asset-grid">`;
+
+  const list = S.assets.filter(a => f === 'all' || a.status === f);
+  if (!list.length) {
+    html += `<div class="empty" style="grid-column:span 2;padding:30px 10px">
+      <div class="ic">📦</div><div class="s">点右上角 ＋ 记一件买过的东西</div></div>`;
+  } else {
+    for (const a of list) {
+      const days = assetDays(a);
+      const per = a.price / days;
+      const stCls = a.status === 'retired' ? 'retired' : (a.status === 'sold' ? 'sold' : '');
+      const stName = a.status === 'retired' ? '已退役' : (a.status === 'sold' ? '已卖出' : '服役中');
+      html += `<div class="asset-card" data-asset="${a.id}">
+        <span class="st ${stCls}">${stName}</span>
+        <div class="emoji">${a.emoji || '📦'}</div>
+        <div class="nm">${esc(a.name)}</div>
+        <div class="sub">${money(a.price)} · ${days} 天</div>
+        <div class="per">${money(per)}<small>/天</small></div>
+      </div>`;
+    }
+  }
+  html += `</div>`;
+  box.innerHTML = html;
+
+  box.querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => {
+    S.assetFilter = b.dataset.f;
+    renderAssets();
+  }));
+  box.querySelectorAll('[data-asset]').forEach(c => c.addEventListener('click', () => {
+    openEditor('asset', c.dataset.asset);
+  }));
+}
+/* ---------- 重要日子列表（v2） ---------- */
+function renderBirths() {
+  const box = document.getElementById('birthList');
+  if (!box) return;
+  const list = importantSorted();
+  const cnt = document.getElementById('birthCount');
+  if (cnt) cnt.textContent = S.births.length + ' 条';
+
+  if (!list.length) {
+    box.innerHTML = `<div class="card empty"><div class="ic">🎂</div><div class="t">还没有记录</div>
+      <div class="s">点右上角 ＋ 添加第一条</div></div>`;
+    return;
+  }
+
+  let html = '';
+  for (const item of list) {
+    const b = item.b, info = item.info;
+    const isBday = (b.type || 'birthday') !== 'countdown';
+    const big = info.days === 0 ? '今天' : Math.abs(info.days);
+    const small = info.days === 0 ? '就是今天' : (info.past ? '天前' : '天后');
+    const dateTxt = isBday
+      ? (b.lunar ? lunarLabel(b.m, b.d, b.leap) : (b.m + ' 月 ' + b.d + ' 日'))
+      : (info.date.getMonth() + 1) + ' 月 ' + info.date.getDate() + ' 日';
+    const tag = isBday ? (b.lunar ? '农历' : '生日') : '纪念日';
+    const color = info.past ? '#5b616b' : (info.days <= 7 ? '#e0503f' : '#8e949e');
+
+    html += `<div class="card day-card" data-day="${b.id}">
+      <div class="day-main">
+        <div class="avatar" style="background:${avatarColor(b.name)}">${esc((b.name || '?').slice(0, 1))}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:15px;font-weight:650;display:flex;align-items:center;gap:6px">
+            ${esc(b.name)}
+            <span class="tag ${b.lunar ? 'lunar' : ''}">${tag}</span>
+            ${b.rel ? `<span class="tag">${esc(b.rel)}</span>` : ''}
+          </div>
+          <div style="font-size:11.5px;color:#8e949e;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${dateTxt}${b.note ? ' · ' + esc(b.note) : ''}
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:19px;font-weight:700;color:${color};font-variant-numeric:tabular-nums">${big}</div>
+          <div style="font-size:10.5px;color:#8e949e;margin-top:4px">${small}</div>
+        </div>
+      </div>
+      <div class="day-more">
+        ${b.note ? '📝 ' + esc(b.note) : '还没有备注，点「编辑」可以写礼物灵感'}
+        <div class="acts">
+          <button type="button" data-edit="${b.id}">编辑</button>
+          <button type="button" class="danger" data-del="${b.id}">删除</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  box.innerHTML = html;
+
+  box.querySelectorAll('.day-card').forEach(card => {
+    card.querySelector('.day-main').addEventListener('click', () => card.classList.toggle('open'));
+  });
+  box.querySelectorAll('[data-edit]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); openEditor('day', el.dataset.edit);
+  }));
+  box.querySelectorAll('[data-del]').forEach(el => el.addEventListener('click', e => {
+    e.stopPropagation(); deleteEditor('day', el.dataset.del);
+  }));
+}
+
+/* ---------- 通用编辑器 ---------- */
+let editorKind = null, editorId = null, editDraft = null;
+
+function closeEditor() {
+  document.getElementById('sheet').hidden = true;
+  editorKind = null; editorId = null; editDraft = null;
+}
+
+function chipRow(id, items, cur) {
+  return `<div class="chips" id="${id}">${items.map(([v, l]) =>
+    `<button type="button" class="chip ${String(v) === String(cur) ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div>`;
+}
+
+function bindChips(sel, cb) {
+  document.querySelectorAll(sel + ' .chip').forEach(c => c.addEventListener('click', () => {
+    document.querySelectorAll(sel + ' .chip').forEach(x => x.classList.toggle('on', x === c));
+    cb(c.dataset.v);
+  }));
+}
+
+function openEditor(kind, id) {
+  editorKind = kind; editorId = id || null;
+  const form = document.getElementById('sheetForm');
+  const delBtn = document.getElementById('fDelete');
+  delBtn.hidden = !id;
+  delBtn.onclick = () => deleteEditor(kind, id);
+
+  if (kind === 'day') {
+    const b = id ? S.births.find(x => x.id === id) : null;
+    editDraft = b ? Object.assign({}, b) : { type: 'birthday', name: '', y: '', m: '', d: '', lunar: false, rel: '朋友', lead: S.settings.defaultLead, note: '' };
+    document.getElementById('sheetHeadTitle').textContent = b ? '编辑日子' : '添加日子';
+    form.innerHTML =
+      `<div class="field"><span>类型</span>${chipRow('eType', [['birthday', '生日（每年循环）'], ['countdown', '纪念日 / 倒数日']], editDraft.type || 'birthday')}</div>
+       <label class="field"><span>名称</span><input id="eName" type="text" maxlength="16" placeholder="妈妈 / 在一起 / 买相机" value="${esc(editDraft.name || '')}"></label>
+       <div class="field"><span>日期 · 月 / 日（生日年份可不填）</span>
+         <div class="dateRow">
+           <input id="eY" type="number" inputmode="numeric" placeholder="年" value="${editDraft.y || ''}">
+           <input id="eM" type="number" inputmode="numeric" placeholder="月" value="${editDraft.m || ''}">
+           <input id="eD" type="number" inputmode="numeric" placeholder="日" value="${editDraft.d || ''}">
+         </div>
+       </div>
+       <label class="switchRow" id="lunarRow"><span>农历生日</span><input type="checkbox" id="eLunar" ${editDraft.lunar ? 'checked' : ''}><i></i></label>
+       <div class="field"><span>关系</span>${chipRow('eRel', RELS.map(r => [r, r]), editDraft.rel)}</div>
+       <div class="field"><span>提前提醒</span>${chipRow('eLead', LEADS.map(d => [d, leadText(d)]), editDraft.lead)}</div>
+       <label class="field"><span>备注 / 礼物灵感</span><input id="eNote" type="text" maxlength="40" placeholder="喜欢什么口味、今年送什么…" value="${esc(editDraft.note || '')}"></label>`;
+
+    bindChips('#eType', v => {
+      editDraft.type = v;
+      const lr = document.getElementById('lunarRow');
+      if (lr) lr.style.display = v === 'birthday' ? '' : 'none';
+    });
+    bindChips('#eRel', v => editDraft.rel = v);
+    bindChips('#eLead', v => editDraft.lead = +v);
+    const lr = document.getElementById('lunarRow');
+    if (lr) lr.style.display = (editDraft.type || 'birthday') === 'birthday' ? '' : 'none';
+  } else {
+    const a = id ? S.assets.find(x => x.id === id) : null;
+    editDraft = a ? Object.assign({}, a) : { name: '', emoji: '📦', price: '', buy: dayKey(new Date()), status: 'active' };
+    document.getElementById('sheetHeadTitle').textContent = a ? '编辑资产' : '添加资产';
+    form.innerHTML =
+      `<label class="field"><span>名称</span><input id="aName" type="text" maxlength="20" placeholder="相机 / 键盘" value="${esc(editDraft.name || '')}"></label>
+       <div class="field"><span>图标</span><div class="chips" id="aEmoji">${ASSET_EMOJIS.map(e =>
+         `<button type="button" class="chip ${e === editDraft.emoji ? 'on' : ''}" data-v="${e}" style="font-size:16px">${e}</button>`).join('')}</div></div>
+       <label class="field"><span>价格（元）</span><input id="aPrice" type="number" inputmode="decimal" placeholder="0" value="${editDraft.price || ''}"></label>
+       <label class="field"><span>购入日期</span><input id="aBuy" type="date" value="${editDraft.buy || ''}"></label>
+       <div class="field"><span>状态</span>${chipRow('aStatus', [['active', '服役中'], ['retired', '已退役'], ['sold', '已卖出']], editDraft.status)}</div>`;
+    bindChips('#aEmoji', v => editDraft.emoji = v);
+    bindChips('#aStatus', v => editDraft.status = v);
+  }
+
+  document.getElementById('sheet').hidden = false;
+}
+
+function saveEditor() {
+  if (editorKind === 'day') {
+    const name = document.getElementById('eName').value.trim();
+    if (!name) { alert('先填个名称'); return; }
+    const y = +document.getElementById('eY').value || 0;
+    const m = +document.getElementById('eM').value;
+    const d = +document.getElementById('eD').value;
+    if (!(m >= 1 && m <= 12) || !(d >= 1 && d <= 31)) { alert('日期填 1–12 月、1–31 日'); return; }
+    const type = editDraft.type || 'birthday';
+    if (type === 'countdown' && !y) { alert('纪念日需要填年份'); return; }
+
+    const obj = {
+      id: editorId || ('d' + Date.now().toString(36)),
+      type, name, y, m, d,
+      lunar: type === 'birthday' && document.getElementById('eLunar').checked,
+      leap: false,
+      rel: editDraft.rel || '朋友',
+      lead: editDraft.lead == null ? S.settings.defaultLead : editDraft.lead,
+      note: document.getElementById('eNote').value.trim()
+    };
+    if (editorId) {
+      const i = S.births.findIndex(x => x.id === editorId);
+      if (i >= 0) S.births[i] = obj; else S.births.push(obj);
+    } else S.births.push(obj);
+    saveBirths();
+  } else {
+    const name = document.getElementById('aName').value.trim();
+    const price = +document.getElementById('aPrice').value;
+    if (!name) { alert('先填名称'); return; }
+    if (!(price > 0)) { alert('价格要大于 0'); return; }
+    const obj = {
+      id: editorId || ('a' + Date.now().toString(36)),
+      name, emoji: editDraft.emoji || '📦', price,
+      buy: document.getElementById('aBuy').value || dayKey(new Date()),
+      status: editDraft.status || 'active'
+    };
+    if (editorId) {
+      const i = S.assets.findIndex(x => x.id === editorId);
+      if (i >= 0) S.assets[i] = obj; else S.assets.push(obj);
+    } else S.assets.push(obj);
+    saveAssets();
+  }
+  closeEditor();
+  renderBirths(); renderAssets(); renderDash(); renderSettings();
+}
+
+function deleteEditor(kind, id) {
+  const target = kind === 'day' ? S.births.find(x => x.id === id) : S.assets.find(x => x.id === id);
+  if (!target) return;
+  if (!confirm('删除「' + target.name + '」？')) return;
+  if (kind === 'day') { S.births = S.births.filter(x => x.id !== id); saveBirths(); }
+  else { S.assets = S.assets.filter(x => x.id !== id); saveAssets(); }
+  closeEditor();
+  renderBirths(); renderAssets(); renderDash(); renderSettings();
+}
+
+/* ---------- 设置页（v2） ---------- */
+function renderSettings() {
+  const lead = document.getElementById('setLead');
+  if (lead) lead.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', +c.dataset.v === S.settings.defaultLead));
+  const iv = document.getElementById('setInterval');
+  if (iv) iv.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', +c.dataset.v === S.settings.interval));
+
+  const bc = document.getElementById('birthCount'); if (bc) bc.textContent = S.births.length + ' 条';
+  const ac = document.getElementById('assetCount'); if (ac) ac.textContent = S.assets.length + ' 件';
+  const vt = document.getElementById('verText'); if (vt) vt.textContent = '2.0';
+
+  const btn = document.getElementById('btnNotify');
+  if (btn) {
+    if (!('Notification' in window)) btn.textContent = '不支持';
+    else if (Notification.permission === 'granted') btn.textContent = '已开启';
+    else if (Notification.permission === 'denied') btn.textContent = '被拒绝';
+    else btn.textContent = '开启';
+  }
+}
+
+/* ---------- 启动（v2） ---------- */
+function bootV2() {
+  loadSettings();
+  loadBirths();
+  loadAssets();
+  loadMinuteCache();
+
+  const leadBox = document.getElementById('setLead');
+  if (leadBox) leadBox.innerHTML = LEADS.map(d => `<button type="button" class="chip" data-v="${d}">${leadText(d)}</button>`).join('');
+  const ivBox = document.getElementById('setInterval');
+  if (ivBox) ivBox.innerHTML = [15, 30, 60].map(s => `<button type="button" class="chip" data-v="${s}">${s}s</button>`).join('');
+
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => goTab(t.dataset.tab)));
+  document.getElementById('sheetBack').addEventListener('click', closeModule);
+  document.getElementById('sheetCancel').addEventListener('click', closeEditor);
+  document.getElementById('mask').addEventListener('click', closeEditor);
+  document.getElementById('fSave').addEventListener('click', saveEditor);
+  document.getElementById('btnRefresh').addEventListener('click', () => refreshGold(true));
+
+  if (leadBox) leadBox.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
+    S.settings.defaultLead = +c.dataset.v; saveSettings(); renderSettings();
+  }));
+  if (ivBox) ivBox.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => {
+    S.settings.interval = +c.dataset.v; saveSettings(); scheduleRefresh(); renderSettings();
+  }));
+
+  document.getElementById('btnNotify').addEventListener('click', enableNotify);
+  document.getElementById('btnIcs').addEventListener('click', exportICS);
+  document.getElementById('btnBackup').addEventListener('click', () => {
+    const dump = {};
+    for (const k of Object.keys(localStorage)) if (k.indexOf('daily.') === 0) dump[k] = localStorage.getItem(k);
+    const blob = new Blob([JSON.stringify({ v: 2, at: Date.now(), data: dump }, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'daily-backup.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast('备份已导出');
+  });
+  document.getElementById('btnClear').addEventListener('click', () => {
+    if (!confirm('清空全部数据（重要日子、资产、设置缓存）？此操作无法撤销')) return;
+    S.births = []; S.assets = [];
+    saveBirths(); saveAssets();
+    renderBirths(); renderAssets(); renderDash(); renderSettings();
+    toast('已清空');
+  });
+
+  document.querySelectorAll('#marketSeg button').forEach(b => b.addEventListener('click', () => setMarket(b.dataset.m)));
+  document.querySelectorAll('#csSeg button').forEach(b => b.addEventListener('click', () => setCSPeriod(b.dataset.p)));
+
+  initGestures();
+  initCSGestures();
+
+  goTab('dash');
+  renderSettings();
+  refreshGold(false);
+  loadCS(false);
+  scheduleRefresh();
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) { refreshGold(false); loadCS(false); renderDash(); checkNotify(); }
+  });
+  window.addEventListener('resize', () => { if (currentModule === 'gold') renderChart(); if (currentModule === 'cs2') drawCS(); });
+
+  setTimeout(checkNotify, 1000);
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+}
+
+bootV2();
