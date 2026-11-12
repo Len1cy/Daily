@@ -20,8 +20,8 @@
 
   <header class="topbar">
     <div>
-      <div class="t" id="pageTitle">行情</div>
-      <div class="sub" id="pageSub">伦敦金现货 · 实时</div>
+      <div class="t" id="pageTitle">今日</div>
+      <div class="sub" id="pageSub">实时行情与日程摘要</div>
     </div>
     <button class="iconbtn" id="btnRefresh" type="button" aria-label="刷新">
       <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
@@ -30,15 +30,90 @@
     </button>
   </header>
 
-  <!-- ================= 行情 ================= -->
-  <main class="view" id="viewGold">
+  <!-- ============ 今日（Bento） ============ -->
+  <main class="view" id="viewDash">
+    <div class="bento" id="bento"></div>
+  </main>
 
+  <!-- ============ 模块库 ============ -->
+  <main class="view" id="viewHub" hidden>
+    <div class="hub-cats" id="hubList"></div>
+  </main>
+
+  <!-- ============ 设置 ============ -->
+  <main class="view" id="viewSettings" hidden>
+
+    <div class="gtitle">提醒</div>
+    <div class="card rows">
+      <div class="row stack"><span>默认提前提醒</span><div class="chips sm" id="setLead"></div></div>
+      <div class="cap">新增日子时用这个，每条也可以单独改</div>
+      <div class="row"><span>系统通知</span><button class="link" id="btnNotify" type="button">开启</button></div>
+      <div class="cap" id="notifyCap">网页版只能在 App 打开时弹通知；锁屏提醒请用下面的日历导出</div>
+      <div class="row"><span>导出到手机日历</span><button class="link" id="btnIcs" type="button">导出 .ics</button></div>
+      <div class="cap">导出后点开文件加入日历，系统会按提前天数提醒，断网也有效</div>
+    </div>
+
+    <div class="gtitle">刷新</div>
+    <div class="card rows">
+      <div class="row stack"><span>行情刷新间隔</span><div class="chips sm" id="setInterval"></div></div>
+      <div class="cap">切到后台自动暂停，回到前台立刻补刷</div>
+    </div>
+
+    <div class="gtitle">数据</div>
+    <div class="card rows">
+      <div class="row"><span>重要日子</span><span class="muted" id="birthCount">0 条</span></div>
+      <div class="row"><span>资产</span><span class="muted" id="assetCount">0 件</span></div>
+      <div class="row"><button class="link" id="btnBackup" type="button">导出备份 JSON</button></div>
+      <div class="row"><button class="link danger" id="btnClear" type="button">清空全部数据</button></div>
+    </div>
+
+    <div class="gtitle">关于</div>
+    <div class="card rows">
+      <div class="row"><span>版本</span><span class="muted" id="verText">2.0</span></div>
+      <div class="row"><span>架构</span><span class="muted">v2.0 Bento · 本机存储</span></div>
+    </div>
+
+    <div class="srcline">行情来自东方财富 / 腾讯 · SteamDT · 不登录 · 不上传</div>
+  </main>
+
+  <!-- ============ 二级抽屉 ============ -->
+  <aside class="sheetView" id="sheetView" hidden>
+    <div class="sheetBar">
+      <button type="button" id="sheetBack" aria-label="返回">
+        <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l-6 6 6 6"/></svg>
+      </button>
+      <span id="sheetTitle">详情</span>
+      <button type="button" id="sheetAction" hidden>＋</button>
+    </div>
+    <div class="sheetBody" id="sheetBody"></div>
+  </aside>
+
+  <nav class="tabbar">
+    <button type="button" class="tab on" data-tab="dash">
+      <svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="12" y="3" width="7" height="7" rx="2"/><rect x="3" y="12" width="7" height="7" rx="2"/><rect x="12" y="12" width="7" height="7" rx="2"/></svg>
+      <span>今日</span>
+    </button>
+    <button type="button" class="tab" data-tab="hub">
+      <svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="7" cy="7" r="3"/><circle cx="16" cy="7" r="2.2"/><circle cx="7" cy="16" r="2.2"/><circle cx="16" cy="16" r="3"/></svg>
+      <span>模块</span>
+    </button>
+    <button type="button" class="tab" data-tab="settings">
+      <svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 8h14M4 14h14"/><circle cx="8" cy="8" r="2.1" fill="#fff"/><circle cx="14" cy="14" r="2.1" fill="#fff"/></svg>
+      <span>设置</span>
+    </button>
+  </nav>
+
+</div>
+
+<!-- ============ 模块详情（抽屉里挂载用） ============ -->
+<div id="pool" hidden>
+
+  <!-- 黄金 -->
+  <div id="goldBlock">
     <div class="seg marketSeg" id="marketSeg">
       <button type="button" data-m="gold" class="on">黄金</button>
       <button type="button" data-m="cs">CS 大盘</button>
     </div>
-
-    <div id="goldBlock">
 
     <section class="card hero">
       <div class="heroTop">
@@ -51,11 +126,21 @@
     </section>
 
     <section class="card info">
-      <div class="cell"><div class="v" id="dayHigh">—</div><div class="k">今高</div></div>
-      <div class="vline"></div>
-      <div class="cell"><div class="v" id="dayLow">—</div><div class="k">今低</div></div>
-      <div class="vline"></div>
-      <div class="cell"><div class="v" id="dayOpen">—</div><div class="k">开盘</div></div>
+      <div class="rangeWrap">
+        <div class="rangeTop">
+          <span class="rk">今日区间</span>
+          <span class="rv" id="rangeText">—</span>
+        </div>
+        <div class="rangeBar" id="rangeBar">
+          <div class="rangeFill" id="rangeFill"></div>
+          <div class="rangeDot" id="rangeDot"></div>
+        </div>
+        <div class="rangeLabels">
+          <span id="rangeLow">今低 —</span>
+          <span id="rangeMid">开盘 —</span>
+          <span id="rangeHigh">今高 —</span>
+        </div>
+      </div>
     </section>
 
     <div class="banner" id="goldBanner" hidden></div>
@@ -71,97 +156,49 @@
         <svg id="cross" xmlns="http://www.w3.org/2000/svg"></svg>
         <div class="bubble" id="bubble" hidden></div>
       </div>
-      <div class="hint" id="chartHint">按住图表看任意时刻的价格</div>
+      <div class="hint" id="chartHint">按住看单根 · 双指缩放时间 · 双击复位</div>
     </section>
 
     <div class="srcline">延迟约 1–3 秒 · 东方财富主源 / 腾讯备源</div>
-    </div>
+  </div>
 
-    <div id="csBlock" hidden>
-      <section class="card hero">
-        <div class="heroTop">
-          <span class="label">CS2 大盘指数 · SteamDT</span>
-          <span class="status" id="csStatus"><i></i><span>读取中…</span></span>
-        </div>
-        <div class="price" id="csPrice">—</div>
-        <div class="chg" id="csChg">—</div>
-        <div class="cny" id="csTime">—</div>
-      </section>
+  <!-- CS 大盘 -->
+  <div id="csBlock" hidden>
+    <section class="card hero">
+      <div class="heroTop">
+        <span class="label">CS2 大盘指数 · SteamDT</span>
+        <span class="status" id="csStatus"><i></i><span>读取中…</span></span>
+      </div>
+      <div class="price" id="csPrice">—</div>
+      <div class="chg" id="csChg">—</div>
+      <div class="cny" id="csTime">—</div>
+    </section>
 
-      <section class="card chartCard">
-        <div class="seg" id="csSeg">
-          <button type="button" data-p="rt" class="on">实时</button>
-          <button type="button" data-p="day">日K</button>
-        </div>
-        <div class="chartBox" id="csBox">
-          <svg id="csChart" xmlns="http://www.w3.org/2000/svg"></svg>
-          <svg id="csCross" xmlns="http://www.w3.org/2000/svg"></svg>
-          <div class="bubble" id="csBubble" hidden></div>
-        </div>
-        <div class="hint" id="csHint">按住看点位 · 双指缩放时间 · 双击复位</div>
-      </section>
+    <section class="card chartCard">
+      <div class="seg" id="csSeg">
+        <button type="button" data-p="rt" class="on">实时</button>
+        <button type="button" data-p="day">日K</button>
+      </div>
+      <div class="chartBox" id="csBox">
+        <svg id="csChart" xmlns="http://www.w3.org/2000/svg"></svg>
+        <svg id="csCross" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="bubble" id="csBubble" hidden></div>
+      </div>
+      <div class="hint" id="csHint">按住看点位 · 双指缩放时间 · 双击复位</div>
+    </section>
 
-      <div class="srcline">数据来自 SteamDT · 每 15 分钟同步 · 只存本机</div>
-    </div>
-  </main>
+    <div class="srcline">数据来自 SteamDT · 每 15 分钟同步</div>
+  </div>
 
-  <!-- ================= 生日 ================= -->
-  <main class="view" id="viewBirth" hidden>
+  <!-- 重要日子 -->
+  <div id="birthBlock" hidden>
     <div id="birthList"></div>
-    <div class="srcline">生日只存在这台手机里 · 每天 09:00 检查</div>
-    <button class="fab" id="fab" type="button" aria-label="添加生日">
-      <svg viewBox="0 0 20 20" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 4v12M4 10h12"/></svg>
-    </button>
-  </main>
+  </div>
 
-  <!-- ================= 设置 ================= -->
-  <main class="view" id="viewSettings" hidden>
-
-    <div class="gtitle">提醒</div>
-    <div class="card rows">
-      <div class="row stack"><span>默认提前提醒</span><div class="chips sm" id="setLead"></div></div>
-      <div class="cap">新增生日时用这个，每个人也可以单独改</div>
-      <div class="row"><span>系统通知</span><button class="link" id="btnNotify" type="button">开启</button></div>
-      <div class="cap" id="notifyCap">网页版只能在 App 打开时弹通知；锁屏提醒请用下面的日历导出</div>
-      <div class="row"><span>导出到手机日历</span><button class="link" id="btnIcs" type="button">导出 .ics</button></div>
-      <div class="cap">导出后点开文件加入日历，系统会按提前天数提醒，断网也有效</div>
-    </div>
-
-    <div class="gtitle">刷新</div>
-    <div class="card rows">
-      <div class="row stack"><span>行情刷新间隔</span><div class="chips sm" id="setInterval"></div></div>
-      <div class="cap">切到后台自动暂停，回到前台立刻补刷</div>
-    </div>
-
-    <div class="gtitle">数据</div>
-    <div class="card rows">
-      <div class="row"><span>生日记录</span><span class="muted" id="birthCount">0 人</span></div>
-      <div class="row"><button class="link danger" id="btnClear" type="button">清空全部生日记录</button></div>
-    </div>
-
-    <div class="gtitle">关于</div>
-    <div class="card rows">
-      <div class="row"><span>版本</span><span class="muted" id="verText">1.0</span></div>
-      <div class="row"><span>数据</span><span class="muted">只存本机，不上传</span></div>
-    </div>
-
-    <div class="srcline">行情来自东方财富 / 腾讯 · 不登录 · 不上传</div>
-  </main>
-
-  <nav class="tabbar">
-    <button type="button" class="tab on" data-tab="gold">
-      <svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 17V10M11 17V6M17 17V8"/></svg>
-      <span>行情</span>
-    </button>
-    <button type="button" class="tab" data-tab="birth">
-      <svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="4" y="9" width="14" height="9" rx="2"/><path d="M7 9V7.5h8V9"/><path d="M11 7V4.6"/><circle cx="11" cy="3.6" r="1"/></svg>
-      <span>生日</span>
-    </button>
-    <button type="button" class="tab" data-tab="settings">
-      <svg viewBox="0 0 22 22" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 8h14M4 14h14"/><circle cx="8" cy="8" r="2.1" fill="#fff"/><circle cx="14" cy="14" r="2.1" fill="#fff"/></svg>
-      <span>设置</span>
-    </button>
-  </nav>
+  <!-- 资产 -->
+  <div id="assetBlock" hidden>
+    <div id="assetList"></div>
+  </div>
 
 </div>
 
@@ -170,30 +207,10 @@
   <div class="mask" id="mask"></div>
   <div class="panel">
     <div class="panelHead">
-      <h3 id="sheetTitle">添加生日</h3>
+      <h3 id="sheetHeadTitle">添加</h3>
       <button type="button" id="sheetCancel">取消</button>
     </div>
-
-    <label class="field"><span>姓名</span>
-      <input id="fName" type="text" maxlength="12" placeholder="比如 妈妈 / 小美" autocomplete="off"></label>
-
-    <div class="field"><span>生日 · 月 / 日（出生年可不填）</span>
-      <div class="dateRow">
-        <input id="fYear" type="number" inputmode="numeric" min="1900" max="2100" placeholder="年">
-        <input id="fMonth" type="number" inputmode="numeric" min="1" max="12" placeholder="月">
-        <input id="fDay" type="number" inputmode="numeric" min="1" max="30" placeholder="日">
-      </div>
-    </div>
-
-    <label class="switchRow"><span>农历生日</span>
-      <input type="checkbox" id="fLunar"><i></i></label>
-
-    <div class="field"><span>关系</span><div class="chips" id="fRel"></div></div>
-    <div class="field"><span>提前提醒</span><div class="chips" id="fLead"></div></div>
-
-    <label class="field"><span>备注</span>
-      <input id="fNote" type="text" maxlength="30" placeholder="想送什么、去年送过…" autocomplete="off"></label>
-
+    <div id="sheetForm"></div>
     <div class="panelActions">
       <button type="button" class="ghost danger" id="fDelete">删除</button>
       <button type="button" class="primary" id="fSave">保存</button>
