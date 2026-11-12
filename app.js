@@ -1367,7 +1367,7 @@ function drawCSLine(w, h) {
     svg += `<text x="${padL - 6}" y="${gy + 3.5}" font-size="9.5" fill="#8e96a5" text-anchor="end">${Math.round(hi - i * (hi - lo) / 3).toLocaleString()}</text>`;
   }
 
-  const line = pts.map((p, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.v).toFixed(1)).join('');
+  const line = pts.map((p, i) => (i ? 'L' : 'M') + xOf(p.d).toFixed(1) + ' ' + y(p.v).toFixed(1)).join('');
   svg += `<path d="${line}L${x(pts.length - 1).toFixed(1)} ${h - padB}L${x(0).toFixed(1)} ${h - padB}Z" fill="url(#csg)"/>`;
   svg += `<path d="${line}" fill="none" stroke="#e0503f" stroke-width="2" stroke-linejoin="round"/>`;
   svg += `<circle cx="${x(pts.length - 1)}" cy="${y(pts[pts.length - 1].v)}" r="3" fill="#fff" stroke="#e0503f" stroke-width="1.8"/>`;
@@ -1784,7 +1784,6 @@ function renderDash() {
 function renderHub() {
   const box = document.getElementById('hubList');
   if (!box) return;
-  const hidden = S.settings.hidden || {};
   let html = '';
   let lastCat = '';
   for (const m of MODULES) {
@@ -1792,28 +1791,18 @@ function renderHub() {
       html += `<div class="gtitle"><span>${m.cat}</span><i></i></div>`;
       lastCat = m.cat;
     }
-    const on = !hidden[m.id];
     html += `<div class="card rows" style="margin-bottom:10px">
-      <div class="hub-item">
-        <div class="hub-ic" style="color:${m.accent}">${m.icon}</div>
+      <div class="hub-item" data-open-module="${m.id}">
+        <div class="hub-ic" style="color:${m.accent};background:linear-gradient(180deg,rgba(255,255,255,.9),rgba(255,255,255,.6))">${m.icon}</div>
         <div class="hub-name">${m.name}<small>${m.sub}</small></div>
-        <div class="hub-toggle ${on ? 'on' : ''}" data-toggle="${m.id}" style="--accent-sys:${m.accent}"><i></i></div>
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="#b6bcc7" stroke-width="2" stroke-linecap="round"><path d="M7 4l6 6-6 6"/></svg>
       </div>
     </div>`;
   }
-  html += `<div class="srcline">首页卡片可长按拖动排序（v2.1）· 关闭开关即从首页隐藏</div>`;
+  html += `<div class="srcline">模块开关在「设置 → 模块」里调</div>`;
   box.innerHTML = html;
-
-  box.querySelectorAll('[data-toggle]').forEach(t => {
-    t.addEventListener('click', e => {
-      e.stopPropagation();
-      const id = t.dataset.toggle;
-      S.settings.hidden = S.settings.hidden || {};
-      S.settings.hidden[id] = !S.settings.hidden[id];
-      saveSettings();
-      renderHub();
-      renderDash();
-    });
+  box.querySelectorAll('[data-open-module]').forEach(el => {
+    el.addEventListener('click', () => openModule(el.dataset.openModule));
   });
 }
 
@@ -1872,7 +1861,7 @@ function goTab(name) {
 
   const meta = {
     dash: ['今日', '实时行情与日程摘要'],
-    hub: ['模块', '全部功能 · 可开关与排序'],
+    hub: ['模块', '全部功能 · 点开使用'],
     settings: ['设置', '提醒、刷新与数据'],
   }[name];
   document.getElementById('pageTitle').textContent = meta[0];
@@ -1934,7 +1923,7 @@ function renderAssets() {
     renderAssets();
   }));
   box.querySelectorAll('[data-asset]').forEach(c => c.addEventListener('click', () => {
-    openEditor('asset', c.dataset.asset);
+    openAssetItem(c.dataset.asset);
   }));
 }
 /* ---------- 重要日子列表（v2） ---------- */
@@ -2068,8 +2057,10 @@ function openEditor(kind, id) {
          `<button type="button" class="chip ${e === editDraft.emoji ? 'on' : ''}" data-v="${e}" style="font-size:16px">${e}</button>`).join('')}</div></div>
        <label class="field"><span>价格（元）</span><input id="aPrice" type="number" inputmode="decimal" placeholder="0" value="${editDraft.price || ''}"></label>
        <label class="field"><span>购入日期</span><input id="aBuy" type="date" value="${editDraft.buy || ''}"></label>
+       <div class="field"><span>类别</span>${chipRow('aCat', ['数码', '穿戴', '家居', '工具', '其他', '未分类'].map(c => [c, c]), editDraft.category || '未分类')}</div>
        <div class="field"><span>状态</span>${chipRow('aStatus', [['active', '服役中'], ['retired', '已退役'], ['sold', '已卖出']], editDraft.status)}</div>`;
     bindChips('#aEmoji', v => editDraft.emoji = v);
+    bindChips('#aCat', v => editDraft.category = v);
     bindChips('#aStatus', v => editDraft.status = v);
   }
 
@@ -2110,7 +2101,8 @@ function saveEditor() {
       id: editorId || ('a' + Date.now().toString(36)),
       name, emoji: editDraft.emoji || '📦', price,
       buy: document.getElementById('aBuy').value || dayKey(new Date()),
-      status: editDraft.status || 'active'
+      status: editDraft.status || 'active',
+      category: editDraft.category || '未分类'
     };
     if (editorId) {
       const i = S.assets.findIndex(x => x.id === editorId);
@@ -2139,6 +2131,22 @@ function renderSettings() {
   const iv = document.getElementById('setInterval');
   if (iv) iv.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', +c.dataset.v === S.settings.interval));
 
+  const modBox = document.getElementById('setModules');
+  if (modBox) {
+    const hiddenMap = S.settings.hidden || {};
+    modBox.innerHTML = MODULES.map(m =>
+      '<div class="hub-item">' +
+        '<div class="hub-ic" style="color:' + m.accent + '">' + m.icon + '</div>' +
+        '<div class="hub-name">' + m.name + '</div>' +
+        '<div class="hub-toggle ' + (hiddenMap[m.id] ? '' : 'on') + '" data-toggle="' + m.id + '" style="--accent-sys:' + m.accent + '"><i></i></div>' +
+      '</div>').join('');
+    modBox.querySelectorAll('[data-toggle]').forEach(t => t.addEventListener('click', () => {
+      const id = t.dataset.toggle;
+      S.settings.hidden = S.settings.hidden || {};
+      S.settings.hidden[id] = !S.settings.hidden[id];
+      saveSettings(); renderSettings(); renderDash();
+    }));
+  }
   const bc = document.getElementById('birthCount'); if (bc) bc.textContent = S.births.length + ' 条';
   const ac = document.getElementById('assetCount'); if (ac) ac.textContent = S.assets.length + ' 件';
   const vt = document.getElementById('verText'); if (vt) vt.textContent = '2.0';
@@ -2205,6 +2213,93 @@ function initSwipeBack() {
   sv.addEventListener('pointercancel', finish);
   sv.addEventListener('pointerleave', finish);
 }
+
+/* ---------- 资产单品详情（三级页） ---------- */
+let currentAsset = null;
+
+function openAssetItem(id) {
+  currentAsset = id;
+  renderAssetItem();
+  document.getElementById('itemView').hidden = false;
+}
+
+function closeAssetItem() {
+  currentAsset = null;
+  document.getElementById('itemView').hidden = true;
+}
+
+function costChartSvg(a, days) {
+  const W = 320, H = 190, padL = 6, padR = 42, padT = 10, padB = 24;
+  const N = Math.min(Math.max(days, 2), 60);
+  const pts = [];
+  for (let i = 0; i < N; i++) {
+    const d = Math.max(1, Math.round(Math.pow(days, i / (N - 1))));
+    pts.push({ d, v: a.price / d });
+  }
+  const vmax = a.price, vmin = a.price / days;
+  const lgc = v => Math.log10(Math.max(0.01, v));
+  const top = lgc(vmax), bot = lgc(vmin);
+  const span = (top - bot) || 1;
+  const xOf = dVal => padL + (dVal - 1) / Math.max(1, days - 1) * (W - padL - padR);
+  const y = v => padT + (top - lgc(v)) / span * (H - padT - padB);
+
+  let svg = `<defs><linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#7ed321" stop-opacity="0.28"/><stop offset="1" stop-color="#7ed321" stop-opacity="0"/></linearGradient></defs>`;
+
+  for (let i = 0; i <= 3; i++) {
+    const v = Math.pow(10, top - i * span / 3);
+    const gy = padT + i * (H - padT - padB) / 3;
+    const label = v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1) + 'k' : Math.round(v);
+    svg += `<line x1="${padL}" x2="${W - padR}" y1="${gy}" y2="${gy}" stroke="rgba(120,132,160,.18)" stroke-dasharray="3 4" stroke-width="1"/>`;
+    svg += `<text x="${W - padR + 8}" y="${gy + 4}" font-size="11" fill="#9aa1ad">${label}</text>`;
+  }
+
+  const line = pts.map((p, i) => (i ? 'L' : 'M') + xOf(p.d).toFixed(1) + ' ' + y(p.v).toFixed(1)).join('');
+  svg += `<path d="${line}L${xOf(days).toFixed(1)} ${H - padB}L${xOf(1).toFixed(1)} ${H - padB}Z" fill="url(#cg)"/>`;
+  svg += `<path d="${line}" fill="none" stroke="#6cc51f" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>`;
+  svg += `<circle cx="${xOf(days).toFixed(1)}" cy="${y(pts[N - 1].v).toFixed(1)}" r="3.4" fill="#fff" stroke="#6cc51f" stroke-width="2"/>`;
+
+  const bd = new Date(a.buy);
+  const fmt = d => (d.getMonth() + 1) + '.' + d.getDate();
+  const today = new Date();
+  svg += `<text x="${padL}" y="${H - 6}" font-size="10.5" fill="#9aa1ad">${fmt(bd)}</text>`;
+  svg += `<text x="${W - padR}" y="${H - 6}" font-size="10.5" fill="#9aa1ad" text-anchor="end">今天</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${svg}</svg>`;
+}
+
+function renderAssetItem() {
+  const a = S.assets.find(x => x.id === currentAsset);
+  const body = document.getElementById('itemBody');
+  if (!a || !body) { closeAssetItem(); return; }
+  const days = assetDays(a);
+  const per = a.price / days;
+  const stName = a.status === 'retired' ? '已退役' : (a.status === 'sold' ? '已卖出' : '已服役');
+  const bd = new Date(a.buy);
+
+  body.innerHTML =
+    `<div class="itemHero">
+      <div class="emoji">${a.emoji || '📦'}</div>
+      <div class="nm">${esc(a.name)}</div>
+      <div class="per">${money(per)}<small>/天</small></div>
+      <div class="sub">总价：${money(a.price)}　·　${stName} ${days} 天</div>
+    </div>
+    <section class="card itemChart">
+      <h4>日均成本</h4>
+      ${costChartSvg(a, days)}
+    </section>
+    <section class="card rows itemRows">
+      <div class="row"><span>价格</span><b>${money(a.price)}</b></div>
+      <div class="row"><span>类别</span><b>${esc(a.category || '未分类')}</b></div>
+      <div class="row"><span>购买日期</span><b>${bd.getFullYear()}年${bd.getMonth() + 1}月${bd.getDate()}日</b></div>
+    </section>
+    <button type="button" class="itemDel" id="itemDelete">
+      <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 6h12M8 6V4h4v2M6 6l1 10h6l1-10"/></svg>
+      删除
+    </button>`;
+
+  const del = document.getElementById('itemDelete');
+  if (del) del.addEventListener('click', () => { deleteEditor('asset', a.id); closeAssetItem(); });
+}
 /* ---------- 启动（v2） ---------- */
 function bootV2() {
   loadSettings();
@@ -2220,6 +2315,8 @@ function bootV2() {
 
   document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => goTab(t.dataset.tab)));
   document.getElementById('sheetBack').addEventListener('click', closeModule);
+  document.getElementById('itemClose').addEventListener('click', closeAssetItem);
+  document.getElementById('itemEdit').addEventListener('click', () => { if (currentAsset) openEditor('asset', currentAsset); });
   document.getElementById('sheetCancel').addEventListener('click', closeEditor);
   document.getElementById('mask').addEventListener('click', closeEditor);
   document.getElementById('fSave').addEventListener('click', saveEditor);
