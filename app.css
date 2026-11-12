@@ -387,7 +387,7 @@ body{
 .hub-toggle.on i{left:19px;}
 
 /* 二级抽屉 */
-.sheetView{position:fixed;inset:0;z-index:55;background:var(--bg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);animation:sheetIn .22s ease-out;}
+.sheetView{position:fixed;inset:0;z-index:55;touch-action:pan-y;will-change:transform;background:var(--bg);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);animation:sheetIn .22s ease-out;}
 @keyframes sheetIn{from{transform:translateX(16px);opacity:.6}to{transform:none;opacity:1}}
 .sheetBar{flex:0 0 52px;display:flex;align-items:center;gap:10px;padding:0 12px;}
 .sheetBar button{border:0;background:rgba(255,255,255,.7);width:34px;height:34px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--ink);font-size:20px;line-height:1;}
@@ -442,3 +442,6 @@ body{
 .tabbar{bottom:calc(3px + env(safe-area-inset-bottom));}
 .view{padding-bottom:calc(92px + env(safe-area-inset-bottom));}
 .sheetBody{padding-bottom:calc(92px + env(safe-area-inset-bottom));}
+/* 侧滑返回过渡 */
+.sheetView.dragging{transition:none;}
+.sheetView.closing{transition:transform .19s cubic-bezier(.32,.72,0,1);}
