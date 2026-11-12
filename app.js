@@ -978,12 +978,57 @@ async function loadPeriod(mode) {
     const target = mode === 'h4' ? S.h4 : S.day;
     if (!target.length) {
       chartEl.innerHTML = `<text x="50%" y="50%" font-size="11" fill="#a4a9b2" text-anchor="middle">正在获取…</text>`;
-      try { await fetchCandles(mode); } catch (e) { }
+      try {
+        await fetchCandles(mode);
+      } catch (e) {
+        if (mode === 'day') {
+          try {
+            const alt = await fetchCandlesSina();
+            S.day = alt;
+            S.candleSource = 'sina';
+          } catch (e2) {
+            chartEl.innerHTML = `<text x="50%" y="50%" font-size="11" fill="#a4a9b2" text-anchor="middle">日线数据源暂不可用</text>`;
+            return;
+          }
+        } else {
+          chartEl.innerHTML = `<text x="50%" y="50%" font-size="11.5" fill="#a4a9b2" text-anchor="middle">4 小时线数据源暂不可用，可先看日线</text>`;
+          return;
+        }
+      }
     }
     renderChart();
   }
 }
 
+
+/* ---------- 日线备用源：新浪 JSONP（东财挂了也能看日线） ---------- */
+function fetchCandlesSina() {
+  return new Promise((resolve, reject) => {
+    const cb = '_sinaK' + Date.now().toString(36);
+    const s = document.createElement('script');
+    const timer = setTimeout(() => { try { s.remove(); } catch (e) { } reject(new Error('timeout')); }, 12000);
+    s.src = `https://stock2.finance.sina.com.cn/futures/api/jsonp.php/var%20${cb}=/GlobalFuturesService.getGlobalFuturesDailyKLine?symbol=XAU`;
+    s.onload = () => {
+      clearTimeout(timer);
+      const raw = window[cb];
+      try { delete window[cb]; } catch (e) { window[cb] = undefined; }
+      try { s.remove(); } catch (e) { }
+      if (!Array.isArray(raw) || raw.length < 2) return reject(new Error('empty'));
+      const out = raw.map(r => {
+        const p = String(r.date).split('-');
+        return {
+          t: +new Date(+p[0], (+p[1] || 1) - 1, +p[2] || 1),
+          o: +r.open, h: +r.high, l: +r.low, c: +r.close,
+          label: p.length === 3 ? p[1] + '-' + p[2] : String(r.date)
+        };
+      }).filter(k => isFinite(k.o) && k.o > 0);
+      out.sort((a, b) => a.t - b.t);
+      resolve(out);
+    };
+    s.onerror = () => { clearTimeout(timer); try { s.remove(); } catch (e) { } reject(new Error('script')); };
+    document.head.appendChild(s);
+  });
+}
 /* ================= 设置 ================= */
 function renderSettings() {
   syncChips('#setLead', S.settings.defaultLead);
@@ -1161,7 +1206,7 @@ function boot() {
 
   initGestures();
   initCSGestures();
-  document.querySelectorAll('#marketSeg button').forEach(b => b.addEventListener('click', () => setMarket(b.dataset.m)));
+  document.querySelectorAll('#seg button').forEach(b => b.addEventListener('click', () => loadPeriod(b.dataset.p)));
   document.querySelectorAll('#csSeg button').forEach(b => b.addEventListener('click', () => setCSPeriod(b.dataset.p)));
   setTab('gold');
   loadPeriod(S.settings.period);
@@ -2135,7 +2180,7 @@ function bootV2() {
     toast('已清空');
   });
 
-  document.querySelectorAll('#marketSeg button').forEach(b => b.addEventListener('click', () => setMarket(b.dataset.m)));
+  document.querySelectorAll('#seg button').forEach(b => b.addEventListener('click', () => loadPeriod(b.dataset.p)));
   document.querySelectorAll('#csSeg button').forEach(b => b.addEventListener('click', () => setCSPeriod(b.dataset.p)));
 
   initGestures();
