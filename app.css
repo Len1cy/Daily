@@ -469,3 +469,10 @@ body{
   margin-top:6px;border:0;background:transparent;color:#e0503f;font-size:14px;
   display:flex;align-items:center;justify-content:center;gap:6px;padding:14px;
 }
+/* 图表与十字线叠放（之前是两个 SVG 上下堆叠，导致十字线跑到卡片外） */
+.chartBox{overflow:hidden;}
+.chartBox > svg{position:absolute;left:0;top:0;width:100%;height:100%;display:block;}
+/* 日均成本曲线：长按取值 */
+.costBox{position:relative;height:190px;touch-action:none;user-select:none;-webkit-user-select:none;}
+.costBox > svg{position:absolute;left:0;top:0;width:100%;height:100%;display:block;overflow:hidden;}
+.costBox .bubble{pointer-events:none;}
