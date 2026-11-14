@@ -31,6 +31,8 @@ const S = {
   cross: null,          // {mode, t|i}
   zoom: { h4: { count: 120, start: null }, day: { count: 120, start: null } },
   minuteFail: false,
+  logs: [],
+  wishes: [],
   locked: false,
   lastFetch: 0,
   failed: false,
@@ -1638,9 +1640,11 @@ const MODULES = [
   { id: 'cs2',       name: 'CS2 大盘',   sub: 'SteamDT 指数 · 实时 / 日K',     icon: '📈', accent: '#3B82F6', size: 'span-1', cat: '金融盯盘' },
   { id: 'important', name: '重要日子',   sub: '生日 · 纪念日 · 倒数日',         icon: '🎂', accent: '#F43F5E', size: 'span-1', cat: '生活记录' },
   { id: 'assets',    name: '资产',       sub: '买的物件 · 日均成本',            icon: '📦', accent: '#22C55E', size: 'span-2', cat: '生活记录' },
+  { id: 'log',       name: '今天干了什么', sub: '每天记一笔 · 回头看得见',        icon: '📝', accent: '#8B5CF6', size: 'span-1', cat: '生活记录' },
+  { id: 'wish',      name: '心愿单',     sub: '想买的东西 · 攒钱目标',          icon: '✨', accent: '#EC4899', size: 'span-1', cat: '生活记录' },
 ];
 
-const BLOCK_OF = { gold: '#goldBlock', cs2: '#csBlock', important: '#birthBlock', assets: '#assetBlock' };
+const BLOCK_OF = { gold: '#goldBlock', cs2: '#csBlock', important: '#birthBlock', assets: '#assetBlock', log: '#logBlock', wish: '#wishBlock' };
 
 /* ---------- 资产 ---------- */
 const LS_ASSETS = 'daily.assets.v1';
@@ -1774,6 +1778,28 @@ function renderDash() {
     </article>`;
   }
 
+  // 今天干了什么
+  if (!hidden.log) {
+    const today = dayKey(new Date());
+    const todays = S.logs.filter(l => l.date === today);
+    const last = todays.slice().sort((a, b) => (b.time || '').localeCompare(a.time || ''))[0];
+    html += `<article class="bento-card span-1" data-module="log" data-open="log">
+      <div class="bc-top"><span class="bc-label">📝 今天干了什么</span></div>
+      <div class="bc-value sm">${todays.length} 条</div>
+      <div class="bc-meta">${last ? esc(last.text.slice(0, 14)) : '还没记，写一条吧'}</div>
+    </article>`;
+  }
+
+  // 心愿单
+  if (!hidden.wish) {
+    const st = wishStats();
+    html += `<article class="bento-card span-1" data-module="wish" data-open="wish">
+      <div class="bc-top"><span class="bc-label">✨ 心愿单</span></div>
+      <div class="bc-value sm">${st.left} 件</div>
+      <div class="bc-meta">${st.total > 0 ? money(st.total) : '还没有心愿'}</div>
+    </article>`;
+  }
+
   bento.innerHTML = html;
   bento.querySelectorAll('[data-open]').forEach(el => {
     el.addEventListener('click', () => openModule(el.dataset.open));
@@ -1822,10 +1848,12 @@ function openModule(id) {
   document.getElementById('sheetView').hidden = false;
 
   const action = document.getElementById('sheetAction');
-  action.hidden = !(id === 'important' || id === 'assets');
+  action.hidden = !(id === 'important' || id === 'assets' || id === 'log' || id === 'wish');
   action.onclick = () => {
     if (id === 'important') openEditor('day', null);
     if (id === 'assets') openEditor('asset', null);
+    if (id === 'log') openEditor('log', null);
+    if (id === 'wish') openEditor('wish', null);
   };
 
   if (id === 'gold') {
@@ -1840,6 +1868,8 @@ function openModule(id) {
   }
   if (id === 'important') renderBirths();
   if (id === 'assets') renderAssets();
+  if (id === 'log') renderLogs();
+  if (id === 'wish') renderWishes();
 }
 
 function closeModule() {
@@ -2049,19 +2079,46 @@ function openEditor(kind, id) {
     bindChips('#eLead', v => editDraft.lead = +v);
     const lr = document.getElementById('lunarRow');
     if (lr) lr.style.display = (editDraft.type || 'birthday') === 'birthday' ? '' : 'none';
+  } else if (kind === 'log') {
+    const lg = id ? S.logs.find(x => x.id === id) : null;
+    const now = new Date();
+    editDraft = lg ? Object.assign({}, lg) : { date: dayKey(now), time: pad2(now.getHours()) + ':' + pad2(now.getMinutes()), text: '' };
+    document.getElementById('sheetHeadTitle').textContent = lg ? '编辑记录' : '记一笔';
+    form.innerHTML =
+      `<label class="field"><span>干了什么</span><input id="lText" type="text" maxlength="60" placeholder="修好了键盘 / 跑了 5 公里 / 看完一本书" value="${esc(editDraft.text || '')}"></label>
+       <label class="field"><span>日期</span><input id="lDate" type="date" value="${editDraft.date || ''}"></label>
+       <label class="field"><span>时间</span><input id="lTime" type="time" value="${editDraft.time || ''}"></label>`;
+  } else if (kind === 'wish') {
+    const wi = id ? S.wishes.find(x => x.id === id) : null;
+    editDraft = wi ? Object.assign({}, wi) : { name: '', price: '', note: '', got: false };
+    document.getElementById('sheetHeadTitle').textContent = wi ? '编辑心愿' : '添加心愿';
+    form.innerHTML =
+      `<label class="field"><span>想要什么</span><input id="wName" type="text" maxlength="24" placeholder="相机 / 显示器 / 一次旅行" value="${esc(editDraft.name || '')}"></label>
+       <label class="field"><span>大概价格</span><input id="wPrice" type="number" inputmode="decimal" placeholder="0" value="${editDraft.price || ''}"></label>
+       <label class="field"><span>备注</span><input id="wNote" type="text" maxlength="30" placeholder="为什么想要 / 攒到什么时候" value="${esc(editDraft.note || '')}"></label>
+       <label class="switchRow"><span>已经实现</span><input type="checkbox" id="wGot" ${editDraft.got ? 'checked' : ''}><i></i></label>`;
   } else {
     const a = id ? S.assets.find(x => x.id === id) : null;
     editDraft = a ? Object.assign({}, a) : { name: '', emoji: '📦', price: '', buy: dayKey(new Date()), status: 'active' };
     document.getElementById('sheetHeadTitle').textContent = a ? '编辑资产' : '添加资产';
     form.innerHTML =
       `<label class="field"><span>名称</span><input id="aName" type="text" maxlength="20" placeholder="相机 / 键盘" value="${esc(editDraft.name || '')}"></label>
-       <div class="field"><span>图标</span><div class="chips" id="aEmoji">${ASSET_EMOJIS.map(e =>
-         `<button type="button" class="chip ${e === editDraft.emoji ? 'on' : ''}" data-v="${e}" style="font-size:16px">${e}</button>`).join('')}</div></div>
+       <div class="field"><span>图标</span>
+         <div class="emojiPick" id="aEmojiPick">
+           <div class="big" id="aEmojiView">${editDraft.emoji || '📦'}</div>
+           <div class="hint">点击选择图标</div>
+         </div>
+       </div>
        <label class="field"><span>价格（元）</span><input id="aPrice" type="number" inputmode="decimal" placeholder="0" value="${editDraft.price || ''}"></label>
        <label class="field"><span>购入日期</span><input id="aBuy" type="date" value="${editDraft.buy || ''}"></label>
        <div class="field"><span>类别</span>${chipRow('aCat', ['数码', '穿戴', '家居', '工具', '其他', '未分类'].map(c => [c, c]), editDraft.category || '未分类')}</div>
        <div class="field"><span>状态</span>${chipRow('aStatus', [['active', '服役中'], ['retired', '已退役'], ['sold', '已卖出']], editDraft.status)}</div>`;
-    bindChips('#aEmoji', v => editDraft.emoji = v);
+    const ep = document.getElementById('aEmojiPick');
+    if (ep) ep.addEventListener('click', () => openIconPicker(v => {
+      editDraft.emoji = v;
+      const view = document.getElementById('aEmojiView');
+      if (view) view.textContent = v;
+    }));
     bindChips('#aCat', v => editDraft.category = v);
     bindChips('#aStatus', v => editDraft.status = v);
   }
@@ -2094,6 +2151,31 @@ function saveEditor() {
       if (i >= 0) S.births[i] = obj; else S.births.push(obj);
     } else S.births.push(obj);
     saveBirths();
+  } else if (editorKind === 'log') {
+    const text = document.getElementById('lText').value.trim();
+    if (!text) { alert('写点什么吧'); return; }
+    const obj = {
+      id: editorId || ('l' + Date.now().toString(36)),
+      text,
+      date: document.getElementById('lDate').value || dayKey(new Date()),
+      time: document.getElementById('lTime').value || ''
+    };
+    if (editorId) { const i = S.logs.findIndex(x => x.id === editorId); if (i >= 0) S.logs[i] = obj; else S.logs.push(obj); }
+    else S.logs.push(obj);
+    saveLogs();
+  } else if (editorKind === 'wish') {
+    const name2 = document.getElementById('wName').value.trim();
+    if (!name2) { alert('先填想要什么'); return; }
+    const obj = {
+      id: editorId || ('w' + Date.now().toString(36)),
+      name: name2,
+      price: +document.getElementById('wPrice').value || 0,
+      note: document.getElementById('wNote').value.trim(),
+      got: document.getElementById('wGot').checked
+    };
+    if (editorId) { const i = S.wishes.findIndex(x => x.id === editorId); if (i >= 0) S.wishes[i] = obj; else S.wishes.push(obj); }
+    else S.wishes.push(obj);
+    saveWishes();
   } else {
     const name = document.getElementById('aName').value.trim();
     const price = +document.getElementById('aPrice').value;
@@ -2113,19 +2195,26 @@ function saveEditor() {
     saveAssets();
   }
   closeEditor();
-  renderBirths(); renderAssets(); renderDash(); renderSettings();
+  renderBirths(); renderAssets(); renderLogs(); renderWishes(); renderDash(); renderSettings();
 }
 
 function deleteEditor(kind, id) {
-  const target = kind === 'day' ? S.births.find(x => x.id === id) : S.assets.find(x => x.id === id);
+  const stores = { day: S.births, asset: S.assets, log: S.logs, wish: S.wishes };
+  const arr = stores[kind];
+  if (!arr) return;
+  const target = arr.find(x => x.id === id);
   if (!target) return;
-  if (!confirm('删除「' + target.name + '」？')) return;
-  if (kind === 'day') { S.births = S.births.filter(x => x.id !== id); saveBirths(); }
-  else { S.assets = S.assets.filter(x => x.id !== id); saveAssets(); }
-  closeEditor();
-  renderBirths(); renderAssets(); renderDash(); renderSettings();
-}
+  const label = target.name || target.text || '这条记录';
+  if (!confirm('删除「' + label + '」？')) return;
 
+  if (kind === 'day') { S.births = S.births.filter(x => x.id !== id); saveBirths(); }
+  else if (kind === 'asset') { S.assets = S.assets.filter(x => x.id !== id); saveAssets(); }
+  else if (kind === 'log') { S.logs = S.logs.filter(x => x.id !== id); saveLogs(); }
+  else if (kind === 'wish') { S.wishes = S.wishes.filter(x => x.id !== id); saveWishes(); }
+
+  closeEditor();
+  renderBirths(); renderAssets(); renderLogs(); renderWishes(); renderDash(); renderSettings();
+}
 /* ---------- 设置页（v2） ---------- */
 function renderSettings() {
   const lead = document.getElementById('setLead');
@@ -2375,6 +2464,8 @@ function bootV2() {
   loadSettings();
   loadBirths();
   loadAssets();
+  loadLogs();
+  loadWishes();
   loadMinuteCache();
   loadH4Cache();
 
@@ -2388,6 +2479,7 @@ function bootV2() {
   document.getElementById('itemClose').addEventListener('click', closeAssetItem);
   document.getElementById('itemEdit').addEventListener('click', () => { if (currentAsset) openEditor('asset', currentAsset); });
   document.getElementById('sheetCancel').addEventListener('click', closeEditor);
+  document.getElementById('pickerClose').addEventListener('click', () => { document.getElementById('pickerView').hidden = true; });
   document.getElementById('mask').addEventListener('click', closeEditor);
   document.getElementById('fSave').addEventListener('click', saveEditor);
   document.getElementById('btnRefresh').addEventListener('click', () => refreshGold(true));
@@ -2441,6 +2533,150 @@ function bootV2() {
   setTimeout(checkNotify, 1000);
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+}
+
+
+/* ================= 图标选择器 ================= */
+const ICON_GROUPS = [
+  { name: '数码', items: ['💻', '⌨️', '🖱️', '📱', '📷', '📹', '🎥', '🎮', '🕹️', '🎧', '🎤', '🖥️', '💾', '💿', '📀', '📼', '☎️', '📞', '📠', '📺', '📻', '🎙️', '⌚', '🖨️', '⌨️'] },
+  { name: '电器', items: ['🔌', '💡', '🔦', '🧯', '🪔', '🧺', '🧹', '🧴', '🪣', '🧽', '🛁', '🚿', '🧼', '🪒', '🪥', '🌡️', '🧊', '🪭', '🔋', '📺'] },
+  { name: '房产', items: ['🏠', '🏡', '🏢', '🏬', '🏨', '🏦', '🏪', '🏫', '🏛️', '🏗️', '🧱', '🪟', '🛋️', '🛏️', '🚪', '🪑', '🖼️', '🕯️', '🪴', '🧴'] },
+  { name: '交通', items: ['🚗', '🚕', '🚙', '🚌', '🚎', '🏎️', '🚓', '🚑', '🚒', '🛻', '🚚', '🚛', '🚜', '🛵', '🏍️', '🚲', '🛴', '🛹', '⛵', '✈️'] },
+  { name: '箱包', items: ['🎒', '👝', '👛', '👜', '💼', '🧳', '🕶️', '👟', '👞', '🧢', '🎩', '💍', '🪞', '👓'] },
+  { name: '生活', items: ['🎁', '📦', '🍰', '☕', '🎵', '📚', '✏️', '🖊️', '📌', '🧸', '🌱', '🎨', '🧩', '🪄', '⭐', '🛒', '🎫', '🍜', '🏀', '🎸'] },
+];
+
+let pickerCb = null, pickerCat = '全部';
+
+function renderPicker() {
+  const cats = document.getElementById('pickerCats');
+  const grid = document.getElementById('pickerGrid');
+  if (!cats || !grid) return;
+  cats.innerHTML = ['全部'].concat(ICON_GROUPS.map(g => g.name))
+    .map(n => `<button type="button" class="chip ${pickerCat === n ? 'on' : ''}" data-cat="${n}">${n}</button>`).join('');
+  const items = pickerCat === '全部'
+    ? ICON_GROUPS.reduce((a, g) => a.concat(g.items), [])
+    : (ICON_GROUPS.find(g => g.name === pickerCat) || { items: [] }).items;
+  grid.innerHTML = items.map(e => `<button type="button" data-emoji="${e}">${e}</button>`).join('');
+
+  cats.querySelectorAll('[data-cat]').forEach(b => b.addEventListener('click', () => {
+    pickerCat = b.dataset.cat; renderPicker();
+  }));
+  grid.querySelectorAll('[data-emoji]').forEach(b => b.addEventListener('click', () => {
+    const v = b.dataset.emoji;
+    document.getElementById('pickerView').hidden = true;
+    if (pickerCb) pickerCb(v);
+  }));
+}
+
+function openIconPicker(cb) {
+  pickerCb = cb;
+  pickerCat = '全部';
+  renderPicker();
+  document.getElementById('pickerView').hidden = false;
+}
+
+/* ================= 今天干了什么 ================= */
+const LS_LOGS = 'daily.logs.v1';
+function loadLogs() {
+  try { S.logs = JSON.parse(localStorage.getItem(LS_LOGS) || '[]') || []; } catch (e) { S.logs = []; }
+}
+function saveLogs() {
+  try { localStorage.setItem(LS_LOGS, JSON.stringify(S.logs)); } catch (e) { }
+}
+
+function renderLogs() {
+  const box = document.getElementById('logList');
+  if (!box) return;
+  const today = dayKey(new Date());
+  const todays = S.logs.filter(l => l.date === today).sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+  const past = S.logs.filter(l => l.date !== today)
+    .sort((a, b) => (b.date + (b.time || '')) .localeCompare(a.date + (a.time || '')))
+    .slice(0, 60);
+
+  let html = `<section class="card" style="padding:16px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div>
+          <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.05em">今天</div>
+          <div style="font-size:30px;font-weight:700;margin-top:4px">${todays.length} 条</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:6px">${today.replace(/-/g, '.')}</div>
+        </div>
+        <div style="font-size:34px">📝</div>
+      </div>
+    </section>`;
+
+  if (!todays.length) {
+    html += `<div class="card empty"><div class="ic">🫧</div><div class="t">今天还空着</div><div class="s">点右上角 ＋ 写一条</div></div>`;
+  } else {
+    html += `<div class="card rows" style="padding:0">` + todays.map(l =>
+      `<div class="log-item" data-log="${l.id}">
+        <div class="log-time">${l.time || ''}</div>
+        <div class="log-text">${esc(l.text)}</div>
+      </div>`).join('') + `</div>`;
+  }
+
+  if (past.length) {
+    html += `<div class="log-date">往前</div><div class="card rows" style="padding:0">`;
+    let last = '';
+    for (const l of past) {
+      if (l.date !== last) {
+        html += `<div class="log-date" style="margin:12px 16px 2px">${l.date.replace(/-/g, '.')}</div>`;
+        last = l.date;
+      }
+      html += `<div class="log-item" data-log="${l.id}">
+        <div class="log-time">${l.time || ''}</div>
+        <div class="log-text">${esc(l.text)}</div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  box.innerHTML = html;
+  box.querySelectorAll('[data-log]').forEach(el => el.addEventListener('click', () => openEditor('log', el.dataset.log)));
+}
+
+/* ================= 心愿单 ================= */
+const LS_WISH = 'daily.wishes.v1';
+function loadWishes() {
+  try { S.wishes = JSON.parse(localStorage.getItem(LS_WISH) || '[]') || []; } catch (e) { S.wishes = []; }
+}
+function saveWishes() {
+  try { localStorage.setItem(LS_WISH, JSON.stringify(S.wishes)); } catch (e) { }
+}
+function wishStats() {
+  let total = 0, got = 0;
+  for (const w of S.wishes) { if (w.got) got++; else total += (+w.price || 0); }
+  return { total, got, count: S.wishes.length, left: S.wishes.length - got };
+}
+
+function renderWishes() {
+  const box = document.getElementById('wishList');
+  if (!box) return;
+  const st = wishStats();
+  let html = `<section class="card" style="padding:16px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between">
+        <div>
+          <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.05em">还想要</div>
+          <div style="font-size:30px;font-weight:700;margin-top:4px">${money(st.total)}</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:6px">${st.left} 件未实现 · 已实现 ${st.got} 件</div>
+        </div>
+        <div style="font-size:34px">✨</div>
+      </div>
+    </section>`;
+
+  if (!st.count) {
+    html += `<div class="card empty"><div class="ic">🎁</div><div class="t">还没有心愿</div><div class="s">点右上角 ＋ 加一个想要的东西</div></div>`;
+  } else {
+    const list = S.wishes.slice().sort((a, b) => (a.got ? 1 : 0) - (b.got ? 1 : 0));
+    html += `<div class="card rows" style="padding:0">` + list.map(w =>
+      `<div class="wish-row ${w.got ? 'got' : ''}" data-wish="${w.id}">
+        <div class="nm">${esc(w.name)}${w.note ? `<small>${esc(w.note)}</small>` : ''}</div>
+        ${w.got ? `<span class="wish-done">已实现</span>` : ''}
+        <div class="pr">${w.price ? money(w.price) : '—'}</div>
+      </div>`).join('') + `</div>`;
+  }
+  box.innerHTML = html;
+  box.querySelectorAll('[data-wish]').forEach(el => el.addEventListener('click', () => openEditor('wish', el.dataset.wish)));
 }
 
 bootV2();
