@@ -206,7 +206,7 @@ button{font-family:inherit;}
   max-height:92vh;overflow-y:auto;
   animation:up .22s ease-out;
 }
-@keyframes up{from{transform:translateY(24px);opacity:.7}to{transform:none;opacity:1}}
+@keyframes up{from{transform:translateY(24px)}to{transform:none}}
 .panelHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
 .panelHead h3{margin:0;font-size:17px;font-weight:700;}
 .panelHead button{border:0;background:transparent;color:var(--muted);font-size:13px;}
@@ -304,7 +304,7 @@ body{
 }
 
 .panel{
-  background: linear-gradient(180deg, rgba(255,255,255,.86), rgba(255,255,255,.74));
+  background: linear-gradient(180deg, rgba(255,255,255,.97), rgba(255,255,255,.94));
   border-top:1px solid rgba(255,255,255,.8);
   box-shadow: 0 -18px 40px rgba(20,22,27,.18), inset 0 1px 0 rgba(255,255,255,.9);
 }
@@ -524,3 +524,47 @@ body{
 .wish-row .pr{font-size:14px;font-weight:650;font-variant-numeric:tabular-nums;}
 .wish-row.got .nm,.wish-row.got .pr{opacity:.45;text-decoration:line-through;}
 .wish-done{font-size:10px;padding:2px 7px;border-radius:8px;background:rgba(34,197,94,.14);color:#15803d;}
+/* ================= 健身打卡 ================= */
+.calHead{display:flex;align-items:center;justify-content:space-between;padding:0 4px 10px;font-size:13px;font-weight:650;}
+.calHead button{
+  border:1px solid rgba(255,255,255,.9);background:rgba(255,255,255,.85);
+  width:30px;height:30px;border-radius:10px;font-size:16px;line-height:1;color:var(--ink);
+}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;width:100%;}
+.cal .wd{font-size:10px;color:var(--muted);text-align:center;padding-bottom:2px;}
+.cal .day{
+  aspect-ratio:1;border-radius:11px;background:rgba(255,255,255,.55);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-size:12.5px;color:var(--sub);font-variant-numeric:tabular-nums;
+}
+.cal .day.empty{background:transparent;}
+.cal .day.done{background:rgba(255,255,255,.95);color:var(--ink);font-weight:650;box-shadow:0 3px 10px rgba(24,32,60,.07);}
+.cal .day.today{box-shadow:inset 0 0 0 1.6px var(--ink);}
+.cal .dots{display:flex;gap:2px;height:5px;}
+.cal .dot{width:5px;height:5px;border-radius:50%;display:block;}
+
+.fit-row{display:flex;gap:12px;padding:13px 16px;align-items:center;}
+.fit-row + .fit-row{border-top:1px solid var(--line);}
+.pbadge{
+  width:27px;height:27px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+  font-size:12.5px;font-weight:700;flex:0 0 auto;
+}
+.fit-mid{flex:1;min-width:0;}
+.fit-date{font-size:13px;font-weight:650;}
+.fit-ex{font-size:11.5px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+.exRow{display:grid;grid-template-columns:1fr 58px 42px 42px 24px;gap:6px;margin-bottom:8px;align-items:center;}
+.exRow input{
+  width:100%;border:0;border-radius:9px;background:rgba(255,255,255,.92);
+  padding:9px 6px;font-size:13px;color:var(--ink);font-family:inherit;text-align:center;
+}
+.exRow .exName{text-align:left;padding-left:9px;}
+.exRow .exDel{border:0;background:transparent;color:#c3c7d0;font-size:13px;padding:4px;}
+.addEx{
+  border:1px dashed rgba(120,132,160,.35);background:rgba(255,255,255,.55);
+  border-radius:10px;padding:9px 12px;font-size:12.5px;color:var(--sub);width:100%;margin-top:2px;
+}
+/* 动作输入：去掉数字框上下箭头，免得挤掉占位字 */
+.exRow input::-webkit-outer-spin-button,
+.exRow input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.exRow input[type=number]{-moz-appearance:textfield;appearance:textfield;padding-left:2px;padding-right:2px;}
