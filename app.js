@@ -2091,6 +2091,7 @@ function openEditor(kind, id, preset) {
        <div class="field"><span>动作与重量</span>
          <div id="exList"></div>
          <button type="button" class="addEx" id="addEx">＋ 添加动作</button>
+         <div class="cap" style="margin-top:8px">选动作会自动带入上次的重量 / 组 / 次</div>
        </div>
        <div class="field"><span>新增动作（存为预设）</span>
          <div class="exAdd">
@@ -2108,13 +2109,33 @@ function openEditor(kind, id, preset) {
       return arr;
     }
 
-    function fillRow(div, name) {
+    function fillRow(div, name, announce) {
+      if (!name) return;
       const last = lastOfEx(name, id);
-      if (!last) return;
-      const put = (cls, v) => { const el = div.querySelector(cls); if (el && v) el.value = v; };
+      if (!last) {
+        if (announce) toast('「' + name + '」还没有历史记录');
+        return;
+      }
+      const put = (cls, v) => {
+        const el = div.querySelector(cls);
+        if (el && v) {
+          el.value = v;
+          el.classList.remove('flash');
+          void el.offsetWidth;
+          el.classList.add('flash');
+        }
+      };
       put('.exWeight', last.weight);
       put('.exSets', last.sets);
       put('.exReps', last.reps);
+      if (announce) {
+        const ps = [];
+        if (last.weight) ps.push(last.weight + 'kg');
+        if (last.sets && last.reps) ps.push(last.sets + '组 × ' + last.reps + '次');
+        else if (last.sets) ps.push(last.sets + '组');
+        else if (last.reps) ps.push(last.reps + '次');
+        toast('已带入上次：' + (ps.join(' · ') || '—'));
+      }
     }
 
     function addRow(it) {
@@ -2138,7 +2159,7 @@ function openEditor(kind, id, preset) {
         if (list.querySelectorAll('.exRow').length > 1) div.remove();
         else div.querySelectorAll('input').forEach(i => i.value = '');
       });
-      div.querySelector('.exName').addEventListener('change', e => fillRow(div, e.target.value));
+      div.querySelector('.exName').addEventListener('change', e => fillRow(div, e.target.value, true));
       list.appendChild(div);
       if (!w && !s && !r2) fillRow(div, div.querySelector('.exName').value);
     }
@@ -2628,7 +2649,25 @@ function bootV2() {
 
   setTimeout(checkNotify, 1000);
 
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+  if ('serviceWorker' in navigator) {
+    let swReloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (swReloading) return;
+      swReloading = true;
+      location.reload();
+    });
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+            nw.postMessage({ type: 'SKIP_WAITING' });
+          }
+        });
+      });
+    }).catch(() => { });
+  }
 }
 
 
