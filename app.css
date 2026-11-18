@@ -589,3 +589,6 @@ body{
   border:0;border-radius:10px;background:var(--ink);color:#fff;
   padding:0 14px;font-size:13px;font-family:inherit;
 }
+/* 自动带入时的高亮 */
+@keyframes flashIn{0%{background:#e6f7cf}100%{background:rgba(255,255,255,.92)}}
+.exRow input.flash{animation:flashIn 1s ease-out;}
