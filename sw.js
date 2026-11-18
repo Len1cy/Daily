@@ -1,5 +1,5 @@
 /* 日常 · 离线外壳：网络优先，失败回退缓存 */
-const CACHE = 'daily-v16';
+const CACHE = 'daily-v17';
 const SHELL = [
   './',
   './index.html',
@@ -47,4 +47,8 @@ self.addEventListener('fetch', e => {
       return res;
     }).catch(() => caches.match(req))
   );
+});
+
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
