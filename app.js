@@ -31,7 +31,7 @@ const S = {
   cross: null,          // {mode, t|i}
   zoom: { h4: { count: 120, start: null }, day: { count: 120, start: null } },
   minuteFail: false,
-  logs: [],
+  fitness: [],
   wishes: [],
   locked: false,
   lastFetch: 0,
@@ -1640,11 +1640,11 @@ const MODULES = [
   { id: 'cs2',       name: 'CS2 大盘',   sub: 'SteamDT 指数 · 实时 / 日K',     icon: '📈', accent: '#3B82F6', size: 'span-1', cat: '金融盯盘' },
   { id: 'important', name: '重要日子',   sub: '生日 · 纪念日 · 倒数日',         icon: '🎂', accent: '#F43F5E', size: 'span-1', cat: '生活记录' },
   { id: 'assets',    name: '资产',       sub: '买的物件 · 日均成本',            icon: '📦', accent: '#22C55E', size: 'span-2', cat: '生活记录' },
-  { id: 'log',       name: '今天干了什么', sub: '每天记一笔 · 回头看得见',        icon: '📝', accent: '#8B5CF6', size: 'span-1', cat: '生活记录' },
+  { id: 'fitness',   name: '健身打卡',   sub: '胸 · 肩 · 背 · 腹 · 记重量',      icon: '🏋️', accent: '#0EA5E9', size: 'span-1', cat: '生活记录' },
   { id: 'wish',      name: '心愿单',     sub: '想买的东西 · 攒钱目标',          icon: '✨', accent: '#EC4899', size: 'span-1', cat: '生活记录' },
 ];
 
-const BLOCK_OF = { gold: '#goldBlock', cs2: '#csBlock', important: '#birthBlock', assets: '#assetBlock', log: '#logBlock', wish: '#wishBlock' };
+const BLOCK_OF = { gold: '#goldBlock', cs2: '#csBlock', important: '#birthBlock', assets: '#assetBlock', fitness: '#fitnessBlock', wish: '#wishBlock' };
 
 /* ---------- 资产 ---------- */
 const LS_ASSETS = 'daily.assets.v1';
@@ -1778,15 +1778,14 @@ function renderDash() {
     </article>`;
   }
 
-  // 今天干了什么
-  if (!hidden.log) {
-    const today = dayKey(new Date());
-    const todays = S.logs.filter(l => l.date === today);
-    const last = todays.slice().sort((a, b) => (b.time || '').localeCompare(a.time || ''))[0];
-    html += `<article class="bento-card span-1" data-module="log" data-open="log">
-      <div class="bc-top"><span class="bc-label">📝 今天干了什么</span></div>
-      <div class="bc-value sm">${todays.length} 条</div>
-      <div class="bc-meta">${last ? esc(last.text.slice(0, 14)) : '还没记，写一条吧'}</div>
+  // 健身打卡
+  if (!hidden.fitness) {
+    const st = fitStats();
+    const lastRec = S.fitness.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
+    html += `<article class="bento-card span-1" data-module="fitness" data-open="fitness">
+      <div class="bc-top"><span class="bc-label">🏋️ 健身打卡</span></div>
+      <div class="bc-value sm">${st.month} 次</div>
+      <div class="bc-meta">${lastRec ? (partOf(lastRec.part).n + ' · ' + esc(fitSummary(lastRec).slice(0, 10))) : '本月还没练'}</div>
     </article>`;
   }
 
@@ -1848,11 +1847,11 @@ function openModule(id) {
   document.getElementById('sheetView').hidden = false;
 
   const action = document.getElementById('sheetAction');
-  action.hidden = !(id === 'important' || id === 'assets' || id === 'log' || id === 'wish');
+  action.hidden = !(id === 'important' || id === 'assets' || id === 'fitness' || id === 'wish');
   action.onclick = () => {
     if (id === 'important') openEditor('day', null);
     if (id === 'assets') openEditor('asset', null);
-    if (id === 'log') openEditor('log', null);
+    if (id === 'fitness') openEditor('fitness', null);
     if (id === 'wish') openEditor('wish', null);
   };
 
@@ -1868,7 +1867,7 @@ function openModule(id) {
   }
   if (id === 'important') renderBirths();
   if (id === 'assets') renderAssets();
-  if (id === 'log') renderLogs();
+  if (id === 'fitness') renderFitness();
   if (id === 'wish') renderWishes();
 }
 
@@ -2044,7 +2043,7 @@ function bindChips(sel, cb) {
   }));
 }
 
-function openEditor(kind, id) {
+function openEditor(kind, id, preset) {
   editorKind = kind; editorId = id || null;
   const form = document.getElementById('sheetForm');
   const delBtn = document.getElementById('fDelete');
@@ -2079,15 +2078,44 @@ function openEditor(kind, id) {
     bindChips('#eLead', v => editDraft.lead = +v);
     const lr = document.getElementById('lunarRow');
     if (lr) lr.style.display = (editDraft.type || 'birthday') === 'birthday' ? '' : 'none';
-  } else if (kind === 'log') {
-    const lg = id ? S.logs.find(x => x.id === id) : null;
-    const now = new Date();
-    editDraft = lg ? Object.assign({}, lg) : { date: dayKey(now), time: pad2(now.getHours()) + ':' + pad2(now.getMinutes()), text: '' };
-    document.getElementById('sheetHeadTitle').textContent = lg ? '编辑记录' : '记一笔';
+  } else if (kind === 'fitness') {
+    const fr = id ? S.fitness.find(x => x.id === id) : null;
+    editDraft = fr
+      ? Object.assign({}, fr, { items: (fr.items || []).slice() })
+      : { date: (preset && preset.date) || dayKey(new Date()), part: 'chest', items: [{ name: '', weight: '', sets: '', reps: '' }] };
+    document.getElementById('sheetHeadTitle').textContent = fr ? '编辑打卡' : '打卡';
     form.innerHTML =
-      `<label class="field"><span>干了什么</span><input id="lText" type="text" maxlength="60" placeholder="修好了键盘 / 跑了 5 公里 / 看完一本书" value="${esc(editDraft.text || '')}"></label>
-       <label class="field"><span>日期</span><input id="lDate" type="date" value="${editDraft.date || ''}"></label>
-       <label class="field"><span>时间</span><input id="lTime" type="time" value="${editDraft.time || ''}"></label>`;
+      `<label class="field"><span>日期</span><input id="fDate" type="date" value="${editDraft.date || ''}"></label>
+       <div class="field"><span>练了哪儿</span>${chipRow('fPart', PARTS.map(pp => [pp.k, pp.n]), editDraft.part)}</div>
+       <div class="field"><span>动作与重量</span>
+         <div id="exList"></div>
+         <button type="button" class="addEx" id="addEx">＋ 添加动作</button>
+       </div>`;
+
+    const list = document.getElementById('exList');
+    const addRow = it => {
+      const div = document.createElement('div');
+      div.className = 'exRow';
+      div.innerHTML =
+        `<input class="exName" type="text" maxlength="14" placeholder="卧推" value="${esc(it.name || '')}">
+         <input class="exWeight" type="number" inputmode="decimal" placeholder="kg" value="${it.weight || ''}">
+         <input class="exSets" type="number" inputmode="numeric" placeholder="组" value="${it.sets || ''}">
+         <input class="exReps" type="number" inputmode="numeric" placeholder="次" value="${it.reps || ''}">
+         <button type="button" class="exDel">✕</button>`;
+      div.querySelector('.exDel').addEventListener('click', () => {
+        if (list.querySelectorAll('.exRow').length > 1) div.remove();
+        else { div.querySelectorAll('input').forEach(i => i.value = ''); }
+      });
+      list.appendChild(div);
+    };
+    (editDraft.items && editDraft.items.length ? editDraft.items : [{}]).forEach(addRow);
+    document.getElementById('addEx').addEventListener('click', () => {
+      addRow({});
+      const rows = list.querySelectorAll('.exRow');
+      const last = rows[rows.length - 1].querySelector('.exName');
+      if (last) last.focus();
+    });
+    bindChips('#fPart', v => editDraft.part = v);
   } else if (kind === 'wish') {
     const wi = id ? S.wishes.find(x => x.id === id) : null;
     editDraft = wi ? Object.assign({}, wi) : { name: '', price: '', note: '', got: false };
@@ -2151,18 +2179,22 @@ function saveEditor() {
       if (i >= 0) S.births[i] = obj; else S.births.push(obj);
     } else S.births.push(obj);
     saveBirths();
-  } else if (editorKind === 'log') {
-    const text = document.getElementById('lText').value.trim();
-    if (!text) { alert('写点什么吧'); return; }
+  } else if (editorKind === 'fitness') {
+    const rows = [...document.querySelectorAll('#exList .exRow')].map(r => ({
+      name: r.querySelector('.exName').value.trim(),
+      weight: +r.querySelector('.exWeight').value || 0,
+      sets: +r.querySelector('.exSets').value || 0,
+      reps: +r.querySelector('.exReps').value || 0
+    })).filter(x => x.name);
     const obj = {
-      id: editorId || ('l' + Date.now().toString(36)),
-      text,
-      date: document.getElementById('lDate').value || dayKey(new Date()),
-      time: document.getElementById('lTime').value || ''
+      id: editorId || ('f' + Date.now().toString(36)),
+      date: document.getElementById('fDate').value || dayKey(new Date()),
+      part: editDraft.part || 'chest',
+      items: rows
     };
-    if (editorId) { const i = S.logs.findIndex(x => x.id === editorId); if (i >= 0) S.logs[i] = obj; else S.logs.push(obj); }
-    else S.logs.push(obj);
-    saveLogs();
+    if (editorId) { const i = S.fitness.findIndex(x => x.id === editorId); if (i >= 0) S.fitness[i] = obj; else S.fitness.push(obj); }
+    else S.fitness.push(obj);
+    saveFit();
   } else if (editorKind === 'wish') {
     const name2 = document.getElementById('wName').value.trim();
     if (!name2) { alert('先填想要什么'); return; }
@@ -2195,25 +2227,25 @@ function saveEditor() {
     saveAssets();
   }
   closeEditor();
-  renderBirths(); renderAssets(); renderLogs(); renderWishes(); renderDash(); renderSettings();
+  renderBirths(); renderAssets(); renderFitness(); renderWishes(); renderDash(); renderSettings();
 }
 
 function deleteEditor(kind, id) {
-  const stores = { day: S.births, asset: S.assets, log: S.logs, wish: S.wishes };
+  const stores = { day: S.births, asset: S.assets, fitness: S.fitness, wish: S.wishes };
   const arr = stores[kind];
   if (!arr) return;
   const target = arr.find(x => x.id === id);
   if (!target) return;
-  const label = target.name || target.text || '这条记录';
+  const label = target.name || target.text || (target.date ? target.date + ' 的打卡' : '这条记录');
   if (!confirm('删除「' + label + '」？')) return;
 
   if (kind === 'day') { S.births = S.births.filter(x => x.id !== id); saveBirths(); }
   else if (kind === 'asset') { S.assets = S.assets.filter(x => x.id !== id); saveAssets(); }
-  else if (kind === 'log') { S.logs = S.logs.filter(x => x.id !== id); saveLogs(); }
+  else if (kind === 'fitness') { S.fitness = S.fitness.filter(x => x.id !== id); saveFit(); }
   else if (kind === 'wish') { S.wishes = S.wishes.filter(x => x.id !== id); saveWishes(); }
 
   closeEditor();
-  renderBirths(); renderAssets(); renderLogs(); renderWishes(); renderDash(); renderSettings();
+  renderBirths(); renderAssets(); renderFitness(); renderWishes(); renderDash(); renderSettings();
 }
 /* ---------- 设置页（v2） ---------- */
 function renderSettings() {
@@ -2464,7 +2496,7 @@ function bootV2() {
   loadSettings();
   loadBirths();
   loadAssets();
-  loadLogs();
+  loadFit();
   loadWishes();
   loadMinuteCache();
   loadH4Cache();
@@ -2576,65 +2608,115 @@ function openIconPicker(cb) {
   document.getElementById('pickerView').hidden = false;
 }
 
-/* ================= 今天干了什么 ================= */
-const LS_LOGS = 'daily.logs.v1';
-function loadLogs() {
-  try { S.logs = JSON.parse(localStorage.getItem(LS_LOGS) || '[]') || []; } catch (e) { S.logs = []; }
+/* ================= 健身打卡 ================= */
+const LS_FIT = 'daily.fitness.v1';
+const PARTS = [
+  { k: 'chest', n: '胸', c: '#EF4444' },
+  { k: 'shoulder', n: '肩', c: '#F59E0B' },
+  { k: 'back', n: '背', c: '#3B82F6' },
+  { k: 'abs', n: '腹', c: '#22C55E' }
+];
+function partOf(k) { return PARTS.find(p => p.k === k) || PARTS[0]; }
+
+function loadFit() {
+  try { S.fitness = JSON.parse(localStorage.getItem(LS_FIT) || '[]') || []; } catch (e) { S.fitness = []; }
 }
-function saveLogs() {
-  try { localStorage.setItem(LS_LOGS, JSON.stringify(S.logs)); } catch (e) { }
+function saveFit() {
+  try { localStorage.setItem(LS_FIT, JSON.stringify(S.fitness)); } catch (e) { }
+}
+function fitStats() {
+  const now = new Date();
+  const ym = now.getFullYear() + '-' + pad2(now.getMonth() + 1);
+  return {
+    month: S.fitness.filter(f => (f.date || '').slice(0, 7) === ym).length,
+    total: S.fitness.length
+  };
+}
+function fitSummary(r) {
+  const items = (r.items || []).filter(x => x.name);
+  if (!items.length) return '没记动作';
+  return items.map(x => x.name + (x.weight ? ' ' + x.weight + 'kg' : '')).join(' · ');
 }
 
-function renderLogs() {
-  const box = document.getElementById('logList');
+function renderFitness() {
+  const box = document.getElementById('fitList');
   if (!box) return;
-  const today = dayKey(new Date());
-  const todays = S.logs.filter(l => l.date === today).sort((a, b) => (b.time || '').localeCompare(a.time || ''));
-  const past = S.logs.filter(l => l.date !== today)
-    .sort((a, b) => (b.date + (b.time || '')) .localeCompare(a.date + (a.time || '')))
-    .slice(0, 60);
+  const st = fitStats();
+  const now = new Date();
+  const ym = S.fitYM || { y: now.getFullYear(), m: now.getMonth() };
+
+  const first = new Date(ym.y, ym.m, 1);
+  const daysInMonth = new Date(ym.y, ym.m + 1, 0).getDate();
+  const startWd = (first.getDay() + 6) % 7;
+  const byDate = {};
+  for (const f of S.fitness) (byDate[f.date] = byDate[f.date] || []).push(f);
+  const todayKey = dayKey(new Date());
+
+  let cal = '';
+  for (let i = 0; i < startWd; i++) cal += `<div class="day empty"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = ym.y + '-' + pad2(ym.m + 1) + '-' + pad2(d);
+    const recs = byDate[key] || [];
+    const dots = recs.map(r => `<i class="dot" style="background:${partOf(r.part).c}"></i>`).join('');
+    cal += `<div class="day ${key === todayKey ? 'today' : ''} ${recs.length ? 'done' : ''}" data-day="${key}">
+      <span>${d}</span><div class="dots">${dots}</div></div>`;
+  }
 
   let html = `<section class="card" style="padding:16px">
       <div style="display:flex;align-items:flex-start;justify-content:space-between">
         <div>
-          <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.05em">今天</div>
-          <div style="font-size:30px;font-weight:700;margin-top:4px">${todays.length} 条</div>
-          <div style="font-size:11.5px;color:var(--muted);margin-top:6px">${today.replace(/-/g, '.')}</div>
+          <div style="font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.05em">本月打卡</div>
+          <div style="font-size:30px;font-weight:700;margin-top:4px">${st.month} 次</div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:6px">累计 ${st.total} 次</div>
         </div>
-        <div style="font-size:34px">📝</div>
+        <div style="font-size:34px">🏋️</div>
+      </div>
+    </section>
+    <section class="card" style="padding:14px 12px 12px">
+      <div class="calHead">
+        <button type="button" data-nav="-1">‹</button>
+        <span>${ym.y} 年 ${ym.m + 1} 月</span>
+        <button type="button" data-nav="1">›</button>
+      </div>
+      <div class="cal">
+        ${['一', '二', '三', '四', '五', '六', '日'].map(w => `<div class="wd">${w}</div>`).join('')}
+        ${cal}
       </div>
     </section>`;
 
-  if (!todays.length) {
-    html += `<div class="card empty"><div class="ic">🫧</div><div class="t">今天还空着</div><div class="s">点右上角 ＋ 写一条</div></div>`;
-  } else {
-    html += `<div class="card rows" style="padding:0">` + todays.map(l =>
-      `<div class="log-item" data-log="${l.id}">
-        <div class="log-time">${l.time || ''}</div>
-        <div class="log-text">${esc(l.text)}</div>
-      </div>`).join('') + `</div>`;
-  }
-
-  if (past.length) {
-    html += `<div class="log-date">往前</div><div class="card rows" style="padding:0">`;
-    let last = '';
-    for (const l of past) {
-      if (l.date !== last) {
-        html += `<div class="log-date" style="margin:12px 16px 2px">${l.date.replace(/-/g, '.')}</div>`;
-        last = l.date;
-      }
-      html += `<div class="log-item" data-log="${l.id}">
-        <div class="log-time">${l.time || ''}</div>
-        <div class="log-text">${esc(l.text)}</div>
+  const recent = S.fitness.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 12);
+  if (recent.length) {
+    html += `<div class="log-date">最近</div><div class="card rows" style="padding:0">`;
+    for (const f of recent) {
+      const p = partOf(f.part);
+      html += `<div class="fit-row" data-fit="${f.id}">
+        <span class="pbadge" style="background:${p.c}22;color:${p.c}">${p.n}</span>
+        <div class="fit-mid">
+          <div class="fit-date">${(+f.date.slice(5, 7))} 月 ${(+f.date.slice(8, 10))} 日</div>
+          <div class="fit-ex">${esc(fitSummary(f))}</div>
+        </div>
       </div>`;
     }
     html += `</div>`;
+  } else {
+    html += `<div class="card empty"><div class="ic">🏋️</div><div class="t">还没打过卡</div><div class="s">点右上角 ＋ 记一次</div></div>`;
   }
 
   box.innerHTML = html;
-  box.querySelectorAll('[data-log]').forEach(el => el.addEventListener('click', () => openEditor('log', el.dataset.log)));
-}
 
+  box.querySelectorAll('[data-nav]').forEach(btn => btn.addEventListener('click', () => {
+    let m = ym.m + (+btn.dataset.nav), y = ym.y;
+    if (m < 0) { m = 11; y--; }
+    if (m > 11) { m = 0; y++; }
+    S.fitYM = { y, m };
+    renderFitness();
+  }));
+  box.querySelectorAll('[data-day]').forEach(el => el.addEventListener('click', () => {
+    const rec = (byDate[el.dataset.day] || [])[0];
+    openEditor('fitness', rec ? rec.id : null, { date: el.dataset.day });
+  }));
+  box.querySelectorAll('[data-fit]').forEach(el => el.addEventListener('click', () => openEditor('fitness', el.dataset.fit)));
+}
 /* ================= 心愿单 ================= */
 const LS_WISH = 'daily.wishes.v1';
 function loadWishes() {
