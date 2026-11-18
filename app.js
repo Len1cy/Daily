@@ -2108,21 +2108,39 @@ function openEditor(kind, id, preset) {
       return arr;
     }
 
+    function fillRow(div, name) {
+      const last = lastOfEx(name, id);
+      if (!last) return;
+      const put = (cls, v) => { const el = div.querySelector(cls); if (el && v) el.value = v; };
+      put('.exWeight', last.weight);
+      put('.exSets', last.sets);
+      put('.exReps', last.reps);
+    }
+
     function addRow(it) {
       const div = document.createElement('div');
       div.className = 'exRow';
+
+      const empty = !it.weight && !it.sets && !it.reps;
+      const last = empty ? lastOfEx(it.name, id) : null;
+      const w = it.weight || (last && last.weight) || '';
+      const s = it.sets || (last && last.sets) || '';
+      const r2 = it.reps || (last && last.reps) || '';
+
       const opts = optionsFor(editDraft.part, it.name);
       div.innerHTML =
         `<select class="exName">${opts.map(o =>
           `<option value="${esc(o)}" ${o === it.name ? 'selected' : ''}>${esc(o || '选择动作')}</option>`).join('')}</select>
-         <input class="exWeight" type="number" inputmode="decimal" placeholder="kg" value="${it.weight || ''}">
-         <input class="exSets" type="number" inputmode="numeric" placeholder="组" value="${it.sets || ''}">
-         <input class="exReps" type="number" inputmode="numeric" placeholder="次" value="${it.reps || ''}">
+         <input class="exWeight" type="number" inputmode="decimal" placeholder="kg" value="${w}">
+         <input class="exSets" type="number" inputmode="numeric" placeholder="组" value="${s}">
+         <input class="exReps" type="number" inputmode="numeric" placeholder="次" value="${r2}">
          <button type="button" class="exDel">✕</button>`;
+
       div.querySelector('.exDel').addEventListener('click', () => {
         if (list.querySelectorAll('.exRow').length > 1) div.remove();
         else div.querySelectorAll('input').forEach(i => i.value = '');
       });
+      div.querySelector('.exName').addEventListener('change', e => fillRow(div, e.target.value));
       list.appendChild(div);
     }
 
@@ -2159,6 +2177,7 @@ function openEditor(kind, id, preset) {
       const opts = optionsFor(editDraft.part, sel ? sel.value : '');
       if (sel) {
         sel.innerHTML = opts.map(o => `<option value="${esc(o)}" ${o === name ? 'selected' : ''}>${esc(o)}</option>`).join('');
+        if (last) fillRow(last, name);
       }
       toast('已保存动作：' + name);
     });  } else if (kind === 'wish') {
@@ -2672,6 +2691,20 @@ function partKeyOf(r) {
   return 'chest';
 }
 
+
+/* ---------- 动作自动带入上次 ---------- */
+function lastOfEx(name, exceptId) {
+  if (!name) return null;
+  const recs = S.fitness
+    .filter(r => r.id !== exceptId)
+    .slice()
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  for (const r of recs) {
+    const it = (r.items || []).find(x => x.name === name && (x.weight || x.sets || x.reps));
+    if (it) return it;
+  }
+  return null;
+}
 /* ---------- 动作预设 ---------- */
 const DEFAULT_EX = {
   chest: ['卧推', '上斜卧推', '哑铃飞鸟', '双杠臂屈伸', '绳索夹胸', '俯卧撑'],
