@@ -1635,6 +1635,8 @@ function setCSPeriod(p) {
    v2.0 外壳：Bento 首页 + 模块库 + 二级抽屉
    ===================================================================== */
 
+const BUILD = 'v18';
+
 const MODULES = [
   { id: 'gold',      name: '伦敦金现货', sub: '实时价 · 分时 / 4小时 / 日线', icon: '🥇', accent: '#F59E0B', size: 'span-2', cat: '金融盯盘' },
   { id: 'cs2',       name: 'CS2 大盘',   sub: 'SteamDT 指数 · 实时 / 日K',     icon: '📈', accent: '#3B82F6', size: 'span-1', cat: '金融盯盘' },
@@ -2356,7 +2358,7 @@ function renderSettings() {
   }
   const bc = document.getElementById('birthCount'); if (bc) bc.textContent = S.births.length + ' 条';
   const ac = document.getElementById('assetCount'); if (ac) ac.textContent = S.assets.length + ' 件';
-  const vt = document.getElementById('verText'); if (vt) vt.textContent = '2.0';
+  const vt = document.getElementById('verText'); if (vt) vt.textContent = '2.0 · ' + BUILD;
 
   const btn = document.getElementById('btnNotify');
   if (btn) {
@@ -2610,6 +2612,17 @@ function bootV2() {
 
   document.getElementById('btnNotify').addEventListener('click', enableNotify);
   document.getElementById('btnIcs').addEventListener('click', exportICS);
+  document.getElementById('btnUpdate').addEventListener('click', () => {
+    toast('正在检查更新…');
+    const done = () => location.reload();
+    if (!('caches' in window)) return done();
+    caches.keys()
+      .then(keys => Promise.all(keys.map(k => caches.delete(k))))
+      .then(() => navigator.serviceWorker && navigator.serviceWorker.getRegistrations())
+      .then(regs => regs ? Promise.all(regs.map(r => r.unregister())) : null)
+      .then(done)
+      .catch(done);
+  });
   document.getElementById('btnBackup').addEventListener('click', () => {
     const dump = {};
     for (const k of Object.keys(localStorage)) if (k.indexOf('daily.') === 0) dump[k] = localStorage.getItem(k);
