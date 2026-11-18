@@ -1785,7 +1785,7 @@ function renderDash() {
     html += `<article class="bento-card span-1" data-module="fitness" data-open="fitness">
       <div class="bc-top"><span class="bc-label">🏋️ 健身打卡</span></div>
       <div class="bc-value sm">${st.month} 次</div>
-      <div class="bc-meta">${lastRec ? (partsOf(lastRec).map(k => partOf(k).n).join('/') + ' · ' + esc(fitSummary(lastRec).slice(0, 10))) : '本月还没练'}</div>
+      <div class="bc-meta">${lastRec ? (partOf(partKeyOf(lastRec)).n + ' · ' + esc(fitSummary(lastRec).slice(0, 10))) : '本月还没练'}</div>
     </article>`;
   }
 
@@ -2081,51 +2081,87 @@ function openEditor(kind, id, preset) {
   } else if (kind === 'fitness') {
     const fr = id ? S.fitness.find(x => x.id === id) : null;
     editDraft = fr
-      ? Object.assign({}, fr, { parts: partsOf(fr).slice(), items: (fr.items || []).slice() })
-      : { date: (preset && preset.date) || dayKey(new Date()), parts: [], items: [{ name: '', weight: '', sets: '', reps: '' }] };
+      ? Object.assign({}, fr, { part: partKeyOf(fr), items: (fr.items || []).slice() })
+      : { date: (preset && preset.date) || dayKey(new Date()), part: 'chest', items: [{ name: '', weight: '', sets: '', reps: '' }] };
+
     document.getElementById('sheetHeadTitle').textContent = fr ? '编辑打卡' : '打卡';
     form.innerHTML =
       `<label class="field"><span>日期</span><input id="fDate" type="date" value="${editDraft.date || ''}"></label>
-       <div class="field"><span>练了哪儿（可多选）</span>
-         <div class="chips" id="fParts">${PARTS.map(pp =>
-           `<button type="button" class="chip ${editDraft.parts.indexOf(pp.k) >= 0 ? 'on' : ''}" data-v="${pp.k}">${pp.n}</button>`).join('')}</div>
-       </div>
+       <div class="field"><span>练了哪儿</span>${chipRow('fPart', PARTS.map(pp => [pp.k, pp.n]), editDraft.part)}</div>
        <div class="field"><span>动作与重量</span>
          <div id="exList"></div>
          <button type="button" class="addEx" id="addEx">＋ 添加动作</button>
+       </div>
+       <div class="field"><span>新增动作（存为预设）</span>
+         <div class="exAdd">
+           <input id="newExName" type="text" maxlength="14" placeholder="比如：器械夹胸">
+           <button type="button" id="saveExPreset">保存预设</button>
+         </div>
        </div>`;
 
     const list = document.getElementById('exList');
-    const addRow = it => {
+
+    function optionsFor(part, cur) {
+      const arr = (EX[part] || []).slice();
+      if (cur && arr.indexOf(cur) < 0) arr.unshift(cur);
+      if (!arr.length) arr.push('');
+      return arr;
+    }
+
+    function addRow(it) {
       const div = document.createElement('div');
       div.className = 'exRow';
+      const opts = optionsFor(editDraft.part, it.name);
       div.innerHTML =
-        `<input class="exName" type="text" maxlength="14" placeholder="卧推" value="${esc(it.name || '')}">
+        `<select class="exName">${opts.map(o =>
+          `<option value="${esc(o)}" ${o === it.name ? 'selected' : ''}>${esc(o || '选择动作')}</option>`).join('')}</select>
          <input class="exWeight" type="number" inputmode="decimal" placeholder="kg" value="${it.weight || ''}">
          <input class="exSets" type="number" inputmode="numeric" placeholder="组" value="${it.sets || ''}">
          <input class="exReps" type="number" inputmode="numeric" placeholder="次" value="${it.reps || ''}">
          <button type="button" class="exDel">✕</button>`;
       div.querySelector('.exDel').addEventListener('click', () => {
         if (list.querySelectorAll('.exRow').length > 1) div.remove();
-        else { div.querySelectorAll('input').forEach(i => i.value = ''); }
+        else div.querySelectorAll('input').forEach(i => i.value = '');
       });
       list.appendChild(div);
-    };
+    }
+
+    function rebuildSelects() {
+      list.querySelectorAll('.exRow').forEach(row => {
+        const sel = row.querySelector('.exName');
+        const cur = sel.value;
+        const opts = optionsFor(editDraft.part, cur);
+        sel.innerHTML = opts.map(o =>
+          `<option value="${esc(o)}" ${o === cur ? 'selected' : ''}>${esc(o || '选择动作')}</option>`).join('');
+      });
+    }
+
     (editDraft.items && editDraft.items.length ? editDraft.items : [{}]).forEach(addRow);
+
     document.getElementById('addEx').addEventListener('click', () => {
-      addRow({});
-      const rows = list.querySelectorAll('.exRow');
-      const last = rows[rows.length - 1].querySelector('.exName');
-      if (last) last.focus();
+      addRow({ name: (EX[editDraft.part] || [])[0] || '' });
     });
-    document.querySelectorAll('#fParts .chip').forEach(c => c.addEventListener('click', () => {
-      const k = c.dataset.v;
-      const i = editDraft.parts.indexOf(k);
-      if (i >= 0) editDraft.parts.splice(i, 1);
-      else editDraft.parts.push(k);
-      c.classList.toggle('on');
-    }));
-  } else if (kind === 'wish') {
+
+    bindChips('#fPart', v => {
+      editDraft.part = v;
+      rebuildSelects();
+    });
+
+    document.getElementById('saveExPreset').addEventListener('click', () => {
+      const inp = document.getElementById('newExName');
+      const name = inp.value.trim();
+      if (!name) { inp.focus(); return; }
+      addExPreset(editDraft.part, name);
+      inp.value = '';
+      const rows = list.querySelectorAll('.exRow');
+      const last = rows[rows.length - 1];
+      const sel = last && last.querySelector('.exName');
+      const opts = optionsFor(editDraft.part, sel ? sel.value : '');
+      if (sel) {
+        sel.innerHTML = opts.map(o => `<option value="${esc(o)}" ${o === name ? 'selected' : ''}>${esc(o)}</option>`).join('');
+      }
+      toast('已保存动作：' + name);
+    });  } else if (kind === 'wish') {
     const wi = id ? S.wishes.find(x => x.id === id) : null;
     editDraft = wi ? Object.assign({}, wi) : { name: '', price: '', note: '', got: false };
     document.getElementById('sheetHeadTitle').textContent = wi ? '编辑心愿' : '添加心愿';
@@ -2198,7 +2234,7 @@ function saveEditor() {
     const obj = {
       id: editorId || ('f' + Date.now().toString(36)),
       date: document.getElementById('fDate').value || dayKey(new Date()),
-      parts: (editDraft.parts && editDraft.parts.length) ? editDraft.parts.slice() : ['chest'],
+      part: editDraft.part || 'chest',
       items: rows
     };
     if (editorId) { const i = S.fitness.findIndex(x => x.id === editorId); if (i >= 0) S.fitness[i] = obj; else S.fitness.push(obj); }
@@ -2506,6 +2542,7 @@ function bootV2() {
   loadBirths();
   loadAssets();
   loadFit();
+  loadEx();
   loadWishes();
   loadMinuteCache();
   loadH4Cache();
@@ -2622,15 +2659,46 @@ const LS_FIT = 'daily.fitness.v1';
 const PARTS = [
   { k: 'chest', n: '胸', c: '#EF4444' },
   { k: 'shoulder', n: '肩', c: '#F59E0B' },
-  { k: 'back', n: '背', c: '#3B82F6' },
-  { k: 'abs', n: '腹', c: '#22C55E' }
+  { k: 'back', n: '背', c: '#3B82F6' }
 ];
-function partOf(k) { return PARTS.find(p => p.k === k) || PARTS[0]; }
-/** 兼容老数据：单个 part 也当数组读 */
-function partsOf(r) {
-  if (r && Array.isArray(r.parts) && r.parts.length) return r.parts;
-  if (r && r.part) return [r.part];
-  return [];
+/* 老数据里可能还有「腹」，只用于显示，不再可选 */
+const LEGACY_PARTS = { abs: { k: 'abs', n: '腹', c: '#22C55E' } };
+
+function partOf(k) { return PARTS.find(p => p.k === k) || LEGACY_PARTS[k] || PARTS[0]; }
+/** 兼容老数据：parts 数组取第一个 */
+function partKeyOf(r) {
+  if (r && r.part) return r.part;
+  if (r && Array.isArray(r.parts) && r.parts.length) return r.parts[0];
+  return 'chest';
+}
+
+/* ---------- 动作预设 ---------- */
+const DEFAULT_EX = {
+  chest: ['卧推', '上斜卧推', '哑铃飞鸟', '双杠臂屈伸', '绳索夹胸', '俯卧撑'],
+  shoulder: ['推举', '侧平举', '前平举', '面拉', '反向飞鸟', '耸肩'],
+  back: ['高位下拉', '引体向上', '杠铃划船', '硬拉', '直臂下压', '单臂划船']
+};
+const LS_EX = 'daily.exercises.v1';
+let EX = {};
+
+function loadEx() {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(LS_EX) || '{}') || {}; } catch (e) { saved = {}; }
+  EX = {};
+  for (const k of Object.keys(DEFAULT_EX)) {
+    EX[k] = Array.from(new Set([].concat(DEFAULT_EX[k], saved[k] || [])));
+  }
+  for (const k of Object.keys(saved)) {
+    if (!EX[k]) EX[k] = saved[k].slice();
+  }
+}
+function saveEx() {
+  try { localStorage.setItem(LS_EX, JSON.stringify(EX)); } catch (e) { }
+}
+function addExPreset(part, name) {
+  if (!name) return;
+  EX[part] = Array.from(new Set([].concat(EX[part] || [], name)));
+  saveEx();
 }
 
 function loadFit() {
@@ -2672,8 +2740,7 @@ function renderFitness() {
   for (let d = 1; d <= daysInMonth; d++) {
     const key = ym.y + '-' + pad2(ym.m + 1) + '-' + pad2(d);
     const recs = byDate[key] || [];
-    const dots = recs.reduce((acc, r) => acc + partsOf(r).map(k =>
-      `<i class="dot" style="background:${partOf(k).c}"></i>`).join(''), '');
+    const dots = recs.map(r => `<i class="dot" style="background:${partOf(partKeyOf(r)).c}"></i>`).join('');
     cal += `<div class="day ${key === todayKey ? 'today' : ''} ${recs.length ? 'done' : ''}" data-day="${key}">
       <span>${d}</span><div class="dots">${dots}</div></div>`;
   }
@@ -2704,12 +2771,9 @@ function renderFitness() {
   if (recent.length) {
     html += `<div class="log-date">最近</div><div class="card rows" style="padding:0">`;
     for (const f of recent) {
-      const ps = partsOf(f);
+      const pk = partKeyOf(f);
       html += `<div class="fit-row" data-fit="${f.id}">
-        <span class="pbadges">${ps.map(k => {
-          const pp = partOf(k);
-          return `<span class="pbadge" style="background:${pp.c}22;color:${pp.c}">${pp.n}</span>`;
-        }).join('')}</span>
+        <span class="pbadge" style="background:${partOf(pk).c}22;color:${partOf(pk).c}">${partOf(pk).n}</span>
         <div class="fit-mid">
           <div class="fit-date">${(+f.date.slice(5, 7))} 月 ${(+f.date.slice(8, 10))} 日</div>
           <div class="fit-ex">${esc(fitSummary(f))}</div>
