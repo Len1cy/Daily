@@ -2121,11 +2121,9 @@ function openEditor(kind, id, preset) {
       const div = document.createElement('div');
       div.className = 'exRow';
 
-      const empty = !it.weight && !it.sets && !it.reps;
-      const last = empty ? lastOfEx(it.name, id) : null;
-      const w = it.weight || (last && last.weight) || '';
-      const s = it.sets || (last && last.sets) || '';
-      const r2 = it.reps || (last && last.reps) || '';
+      const w = it.weight || '';
+      const s = it.sets || '';
+      const r2 = it.reps || '';
 
       const opts = optionsFor(editDraft.part, it.name);
       div.innerHTML =
@@ -2142,6 +2140,7 @@ function openEditor(kind, id, preset) {
       });
       div.querySelector('.exName').addEventListener('change', e => fillRow(div, e.target.value));
       list.appendChild(div);
+      if (!w && !s && !r2) fillRow(div, div.querySelector('.exName').value);
     }
 
     function rebuildSelects() {
