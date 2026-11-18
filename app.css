@@ -568,3 +568,6 @@ body{
 .exRow input::-webkit-outer-spin-button,
 .exRow input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
 .exRow input[type=number]{-moz-appearance:textfield;appearance:textfield;padding-left:2px;padding-right:2px;}
+/* 多个部位徽标 */
+.pbadges{display:flex;gap:4px;flex:0 0 auto;}
+.pbadges .pbadge{width:24px;height:24px;font-size:12px;border-radius:8px;}
