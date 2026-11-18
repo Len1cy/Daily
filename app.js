@@ -1785,7 +1785,7 @@ function renderDash() {
     html += `<article class="bento-card span-1" data-module="fitness" data-open="fitness">
       <div class="bc-top"><span class="bc-label">🏋️ 健身打卡</span></div>
       <div class="bc-value sm">${st.month} 次</div>
-      <div class="bc-meta">${lastRec ? (partOf(lastRec.part).n + ' · ' + esc(fitSummary(lastRec).slice(0, 10))) : '本月还没练'}</div>
+      <div class="bc-meta">${lastRec ? (partsOf(lastRec).map(k => partOf(k).n).join('/') + ' · ' + esc(fitSummary(lastRec).slice(0, 10))) : '本月还没练'}</div>
     </article>`;
   }
 
@@ -2081,12 +2081,15 @@ function openEditor(kind, id, preset) {
   } else if (kind === 'fitness') {
     const fr = id ? S.fitness.find(x => x.id === id) : null;
     editDraft = fr
-      ? Object.assign({}, fr, { items: (fr.items || []).slice() })
-      : { date: (preset && preset.date) || dayKey(new Date()), part: 'chest', items: [{ name: '', weight: '', sets: '', reps: '' }] };
+      ? Object.assign({}, fr, { parts: partsOf(fr).slice(), items: (fr.items || []).slice() })
+      : { date: (preset && preset.date) || dayKey(new Date()), parts: [], items: [{ name: '', weight: '', sets: '', reps: '' }] };
     document.getElementById('sheetHeadTitle').textContent = fr ? '编辑打卡' : '打卡';
     form.innerHTML =
       `<label class="field"><span>日期</span><input id="fDate" type="date" value="${editDraft.date || ''}"></label>
-       <div class="field"><span>练了哪儿</span>${chipRow('fPart', PARTS.map(pp => [pp.k, pp.n]), editDraft.part)}</div>
+       <div class="field"><span>练了哪儿（可多选）</span>
+         <div class="chips" id="fParts">${PARTS.map(pp =>
+           `<button type="button" class="chip ${editDraft.parts.indexOf(pp.k) >= 0 ? 'on' : ''}" data-v="${pp.k}">${pp.n}</button>`).join('')}</div>
+       </div>
        <div class="field"><span>动作与重量</span>
          <div id="exList"></div>
          <button type="button" class="addEx" id="addEx">＋ 添加动作</button>
@@ -2115,7 +2118,13 @@ function openEditor(kind, id, preset) {
       const last = rows[rows.length - 1].querySelector('.exName');
       if (last) last.focus();
     });
-    bindChips('#fPart', v => editDraft.part = v);
+    document.querySelectorAll('#fParts .chip').forEach(c => c.addEventListener('click', () => {
+      const k = c.dataset.v;
+      const i = editDraft.parts.indexOf(k);
+      if (i >= 0) editDraft.parts.splice(i, 1);
+      else editDraft.parts.push(k);
+      c.classList.toggle('on');
+    }));
   } else if (kind === 'wish') {
     const wi = id ? S.wishes.find(x => x.id === id) : null;
     editDraft = wi ? Object.assign({}, wi) : { name: '', price: '', note: '', got: false };
@@ -2189,7 +2198,7 @@ function saveEditor() {
     const obj = {
       id: editorId || ('f' + Date.now().toString(36)),
       date: document.getElementById('fDate').value || dayKey(new Date()),
-      part: editDraft.part || 'chest',
+      parts: (editDraft.parts && editDraft.parts.length) ? editDraft.parts.slice() : ['chest'],
       items: rows
     };
     if (editorId) { const i = S.fitness.findIndex(x => x.id === editorId); if (i >= 0) S.fitness[i] = obj; else S.fitness.push(obj); }
@@ -2617,6 +2626,12 @@ const PARTS = [
   { k: 'abs', n: '腹', c: '#22C55E' }
 ];
 function partOf(k) { return PARTS.find(p => p.k === k) || PARTS[0]; }
+/** 兼容老数据：单个 part 也当数组读 */
+function partsOf(r) {
+  if (r && Array.isArray(r.parts) && r.parts.length) return r.parts;
+  if (r && r.part) return [r.part];
+  return [];
+}
 
 function loadFit() {
   try { S.fitness = JSON.parse(localStorage.getItem(LS_FIT) || '[]') || []; } catch (e) { S.fitness = []; }
@@ -2657,7 +2672,8 @@ function renderFitness() {
   for (let d = 1; d <= daysInMonth; d++) {
     const key = ym.y + '-' + pad2(ym.m + 1) + '-' + pad2(d);
     const recs = byDate[key] || [];
-    const dots = recs.map(r => `<i class="dot" style="background:${partOf(r.part).c}"></i>`).join('');
+    const dots = recs.reduce((acc, r) => acc + partsOf(r).map(k =>
+      `<i class="dot" style="background:${partOf(k).c}"></i>`).join(''), '');
     cal += `<div class="day ${key === todayKey ? 'today' : ''} ${recs.length ? 'done' : ''}" data-day="${key}">
       <span>${d}</span><div class="dots">${dots}</div></div>`;
   }
@@ -2688,9 +2704,12 @@ function renderFitness() {
   if (recent.length) {
     html += `<div class="log-date">最近</div><div class="card rows" style="padding:0">`;
     for (const f of recent) {
-      const p = partOf(f.part);
+      const ps = partsOf(f);
       html += `<div class="fit-row" data-fit="${f.id}">
-        <span class="pbadge" style="background:${p.c}22;color:${p.c}">${p.n}</span>
+        <span class="pbadges">${ps.map(k => {
+          const pp = partOf(k);
+          return `<span class="pbadge" style="background:${pp.c}22;color:${pp.c}">${pp.n}</span>`;
+        }).join('')}</span>
         <div class="fit-mid">
           <div class="fit-date">${(+f.date.slice(5, 7))} 月 ${(+f.date.slice(8, 10))} 日</div>
           <div class="fit-ex">${esc(fitSummary(f))}</div>
