@@ -1,7 +1,7 @@
 {
   "name": "日常",
   "short_name": "日常",
-  "description": "个人用：黄金行情 + 生日提醒",
+  "description": "个人用：行情、健身打卡、重要日子、资产",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
